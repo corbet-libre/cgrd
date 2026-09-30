@@ -776,3 +776,50 @@ shared_test!(matching_rejects_schema_mismatch_and_invalid_profiles, {
         Err(RuleError::Limit)
     ));
 });
+
+shared_test!(
+    hostile_numbers_fail_closed_before_schema_and_matching_arithmetic,
+    {
+        let long_significand = format!("1.{}", "1".repeat(128));
+        for text in [
+            long_significand.as_str(),
+            "0.01e-9223372036854775807",
+            "1e9223372036854775807",
+            "1e129",
+            "1e-129",
+        ] {
+            let mut f = Fixture::new();
+            f.public_mut()
+                .public
+                .insert("number".into(), serde_json::from_str(text).unwrap());
+            refused(
+                f.issue().check(),
+                Refusal::Profile(vec![cshm::Violation {
+                    part: Some(cshm::Part::Public),
+                    field: Some("number".into()),
+                    reason: cshm::ValidationReason::NumberLimit,
+                }]),
+            );
+            assert!(matches!(
+                Participant::new("a", f.public_mut(), &schema("garden"), &[]),
+                Err(RuleError::Profile)
+            ));
+            for rule in [
+                Rule::Equal {
+                    field: "number".into(),
+                    value: serde_json::from_str(text).unwrap(),
+                },
+                Rule::NumberRange {
+                    field: "number".into(),
+                    min: text.into(),
+                    max: "1".into(),
+                },
+            ] {
+                assert!(matches!(
+                    Participant::new("a", &profile("garden"), &schema("garden"), &[rule]),
+                    Err(RuleError::Type)
+                ));
+            }
+        }
+    }
+);

@@ -428,8 +428,9 @@ dependencies = [
 [[package]]
 name = "cshm"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cshm?rev=d136d2dbaceddfa0a19158d8f3a685a84abd06e7#d136d2dbaceddfa0a19158d8f3a685a84abd06e7"
+source = "git+https://github.com/corbet-foss/cshm?rev=bb23c455cd5142431f886f691fd446725bb73b5e#bb23c455cd5142431f886f691fd446725bb73b5e"
 dependencies = [
+ "bigdecimal",
  "jsonschema",
  "rust_decimal",
  "serde",

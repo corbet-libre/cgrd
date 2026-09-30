@@ -107,8 +107,9 @@ Rules form a bounded conjunction: typed `equal`, inclusive `number_range`,
 choice `one_of`, and `block` by member pseudonym. Equality covers boolean,
 number, choice, text and exact location coordinates. Text/choice equality is
 case-sensitive. Numeric equality and ranges use BigDecimal, including
-scientific notation, never f64. Numeric text is limited to 128 bytes and scale
--128..=128 before comparisons. This matching subset can reject extremely large
+scientific notation, never f64. Numeric text uses the shared cshm parser: at most 128 bytes, explicit exponent
+and resulting scale in -128..=128, checked before exact arithmetic. Both profile
+validation and matching can reject extremely large
 numbers that cshm accepts. There is no distance calculation or scripting.
 Missing optional values fail an applicable rule. A block in either direction
 prevents a match. A's failures precede B's, each in source rule order.

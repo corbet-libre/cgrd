@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::collections::BTreeMap;
 
 use bigdecimal::BigDecimal;
 use cshm::{FieldType, PublicProfile, Schema};
@@ -138,17 +138,7 @@ impl Participant {
 }
 
 fn number(text: &str) -> Result<BigDecimal, RuleError> {
-    // Bound both significand and scale before any arithmetic. This prevents
-    // adversarial exponents from allocating unbounded powers of ten.
-    if text.len() > 128 {
-        return Err(RuleError::Type);
-    }
-    let value = BigDecimal::from_str(text).map_err(|_| RuleError::Type)?;
-    let (_, scale) = value.as_bigint_and_exponent();
-    if !(-128..=128).contains(&scale) {
-        return Err(RuleError::Type);
-    }
-    Ok(value)
+    cshm::parse_number(text).map_err(|_| RuleError::Type)
 }
 
 fn json_number(value: &Value) -> Result<BigDecimal, RuleError> {

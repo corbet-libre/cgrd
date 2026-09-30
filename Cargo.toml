@@ -16,7 +16,7 @@ storage = ["dep:crlt"]
 
 [dependencies]
 csgn = { git = "https://github.com/corbet-foss/csgn", rev = "d7203f310c3c129c3f67ef4ef3e34ccf0ae8c93b", default-features = false }
-cshm = { git = "https://github.com/corbet-foss/cshm", rev = "d136d2dbaceddfa0a19158d8f3a685a84abd06e7" }
+cshm = { git = "https://github.com/corbet-foss/cshm", rev = "bb23c455cd5142431f886f691fd446725bb73b5e" }
 cpns = { git = "https://github.com/corbet-foss/cpns", rev = "23968a9fa338791e70078c6070a6f1f3cf185ff7", default-features = false }
 ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
 precis-profiles = "=0.2.0"
