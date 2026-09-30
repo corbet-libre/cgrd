@@ -8,9 +8,38 @@ license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
 repository = "https://github.com/corbet-foss/cgrd"
 readme = "README.md"
 publish = false
-include = ["Cargo.toml", "src/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
+include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
+
+[features]
+default = ["storage"]
+storage = ["dep:crlt"]
 
 [dependencies]
+csgn = { git = "https://github.com/corbet-foss/csgn", rev = "d7203f310c3c129c3f67ef4ef3e34ccf0ae8c93b", default-features = false }
+cshm = { git = "https://github.com/corbet-foss/cshm", rev = "d136d2dbaceddfa0a19158d8f3a685a84abd06e7" }
+cpns = { git = "https://github.com/corbet-foss/cpns", rev = "23968a9fa338791e70078c6070a6f1f3cf185ff7", default-features = false }
+ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
+precis-profiles = "=0.2.0"
+unicode-security = "=0.1.2"
+rustrict = { version = "=0.7.39", default-features = false, features = ["censor"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+thiserror = "2"
+bigdecimal = "0.4.11"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+crlt = { git = "https://github.com/corbet-foss/crlt", rev = "6b94dacd7fa04aa8847c62c6471a1fc5c0f6c9dc", optional = true }
+
+[dev-dependencies]
+csgn = { git = "https://github.com/corbet-foss/csgn", rev = "d7203f310c3c129c3f67ef4ef3e34ccf0ae8c93b", features = ["volatile-signer"] }
+coset = "0.4.2"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tempfile = "3"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = "0.3"
 
 [lints.rust]
 unsafe_code = "forbid"

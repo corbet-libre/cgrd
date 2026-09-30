@@ -1,0 +1,388 @@
+use std::{collections::BTreeMap, str::FromStr};
+
+use bigdecimal::BigDecimal;
+use cshm::{FieldType, PublicProfile, Schema};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+use crate::{MAX_DOCUMENT_BYTES, MAX_ITEMS};
+
+/// Personal rules are conjunctive. No scripting, private attributes or I/O.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Rule {
+    /// Typed equality; numeric and location comparisons are exact decimals.
+    Equal {
+        /// Public, filterable schema field.
+        field: String,
+        /// Value of that field's declared type.
+        value: Value,
+    },
+    /// Inclusive numeric interval. Bounds are decimal strings.
+    NumberRange {
+        /// Public, filterable integer or decimal field.
+        field: String,
+        /// Inclusive minimum.
+        min: String,
+        /// Inclusive maximum.
+        max: String,
+    },
+    /// Any of these declared choice identifiers.
+    OneOf {
+        /// Public, filterable choice field.
+        field: String,
+        /// Nonempty list of permitted option identifiers.
+        values: Vec<String>,
+    },
+    /// Never match this member; independent of profile attributes.
+    Block {
+        /// Community pseudonym.
+        member: String,
+    },
+}
+
+/// Construction errors fail closed; they never echo unknown field names/values.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleError {
+    /// Invalid member, schema, profile or contact check.
+    Profile,
+    /// Too many rules/fields or oversized serialization.
+    Limit,
+    /// A referenced field is private, absent or not filterable.
+    NotFilterable,
+    /// Wrong operator, type, choice or numeric representation.
+    Type,
+    /// Empty, inverted or otherwise invalid rule.
+    Invalid,
+}
+
+#[derive(Clone, PartialEq)]
+enum Attribute {
+    Number(BigDecimal),
+    Boolean(bool),
+    Text(String),
+    Location(BigDecimal, BigDecimal),
+}
+
+enum Predicate {
+    Equal(String, Attribute),
+    Range(String, BigDecimal, BigDecimal),
+    OneOf(String, Vec<String>),
+    Block(String),
+}
+
+/// Validated public attributes and compiled personal rules for one member.
+/// Construction validates data, not identity: authenticate the profile with
+/// [`crate::check`] before using a participant for a security decision.
+pub struct Participant {
+    member: String,
+    schema: Schema,
+    attributes: BTreeMap<String, Attribute>,
+    rules: Vec<Predicate>,
+}
+
+impl Participant {
+    /// Validate a public profile and compile its owner's rules.
+    pub fn new(
+        member: &str,
+        profile: &PublicProfile,
+        schema: &Schema,
+        rules: &[Rule],
+    ) -> Result<Self, RuleError> {
+        Self::with_contact(member, profile, schema, rules, &|_| {
+            cshm::ContactCheck::Unavailable
+        })
+    }
+
+    /// As [`Self::new`], with the same deterministic detector used for admission.
+    pub fn with_contact(
+        member: &str,
+        profile: &PublicProfile,
+        schema: &Schema,
+        rules: &[Rule],
+        contact: &impl Fn(&str) -> cshm::ContactCheck,
+    ) -> Result<Self, RuleError> {
+        if rules.len() > MAX_ITEMS
+            || schema.public.len() + schema.private.len() > MAX_ITEMS
+            || serde_json::to_vec(&(profile, schema, rules))
+                .map_err(|_| RuleError::Type)?
+                .len()
+                > MAX_DOCUMENT_BYTES
+        {
+            return Err(RuleError::Limit);
+        }
+        let compiled = schema.compile().map_err(|_| RuleError::Profile)?;
+        if !crate::guard::identifier(member)
+            || !compiled.validate_public_with(profile, contact).is_valid()
+        {
+            return Err(RuleError::Profile);
+        }
+        let mut attributes = BTreeMap::new();
+        for field in schema.public.iter().filter(|f| f.filterable) {
+            if let Some(value) = profile.public.get(&field.id) {
+                attributes.insert(field.id.clone(), attribute(&field.kind, value)?);
+            }
+        }
+        let rules = rules
+            .iter()
+            .map(|rule| compile_rule(rule, schema))
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            member: member.into(),
+            schema: schema.clone(),
+            attributes,
+            rules,
+        })
+    }
+}
+
+fn number(text: &str) -> Result<BigDecimal, RuleError> {
+    // Bound both significand and scale before any arithmetic. This prevents
+    // adversarial exponents from allocating unbounded powers of ten.
+    if text.len() > 128 {
+        return Err(RuleError::Type);
+    }
+    let value = BigDecimal::from_str(text).map_err(|_| RuleError::Type)?;
+    let (_, scale) = value.as_bigint_and_exponent();
+    if !(-128..=128).contains(&scale) {
+        return Err(RuleError::Type);
+    }
+    Ok(value)
+}
+
+fn json_number(value: &Value) -> Result<BigDecimal, RuleError> {
+    if !value.is_number() {
+        return Err(RuleError::Type);
+    }
+    number(&value.to_string())
+}
+
+fn attribute(kind: &FieldType, value: &Value) -> Result<Attribute, RuleError> {
+    match kind {
+        FieldType::Integer { .. } => {
+            let n = json_number(value)?;
+            if !n.is_integer() {
+                return Err(RuleError::Type);
+            }
+            Ok(Attribute::Number(n))
+        }
+        FieldType::Decimal { .. } => Ok(Attribute::Number(json_number(value)?)),
+        FieldType::YesNo => value
+            .as_bool()
+            .map(Attribute::Boolean)
+            .ok_or(RuleError::Type),
+        FieldType::Choice { options } => {
+            let text = value.as_str().ok_or(RuleError::Type)?;
+            if !options.iter().any(|o| o.id == text) {
+                return Err(RuleError::Type);
+            }
+            Ok(Attribute::Text(text.into()))
+        }
+        FieldType::ShortText { .. } | FieldType::LongText { .. } => value
+            .as_str()
+            .map(|s| Attribute::Text(s.into()))
+            .ok_or(RuleError::Type),
+        FieldType::Location => {
+            let object = value.as_object().ok_or(RuleError::Type)?;
+            if object.len() != 2 {
+                return Err(RuleError::Type);
+            }
+            let lat = json_number(object.get("latitude").ok_or(RuleError::Type)?)?;
+            let lon = json_number(object.get("longitude").ok_or(RuleError::Type)?)?;
+            let latitude = BigDecimal::from(-90)..=BigDecimal::from(90);
+            let longitude = BigDecimal::from(-180)..=BigDecimal::from(180);
+            if !latitude.contains(&lat) || !longitude.contains(&lon) {
+                return Err(RuleError::Type);
+            }
+            Ok(Attribute::Location(lat, lon))
+        }
+    }
+}
+
+fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
+    let id = match rule {
+        Rule::Equal { field, .. } | Rule::NumberRange { field, .. } | Rule::OneOf { field, .. } => {
+            field
+        }
+        Rule::Block { member } => {
+            return if crate::guard::identifier(member) {
+                Ok(Predicate::Block(member.clone()))
+            } else {
+                Err(RuleError::Invalid)
+            };
+        }
+    };
+    let field = schema
+        .public
+        .iter()
+        .find(|f| f.id == *id && f.filterable)
+        .ok_or(RuleError::NotFilterable)?;
+    match rule {
+        Rule::Equal { value, .. } => {
+            Ok(Predicate::Equal(id.clone(), attribute(&field.kind, value)?))
+        }
+        Rule::NumberRange { min, max, .. } => {
+            if !matches!(
+                field.kind,
+                FieldType::Integer { .. } | FieldType::Decimal { .. }
+            ) {
+                return Err(RuleError::Type);
+            }
+            let (min, max) = (number(min)?, number(max)?);
+            if min > max {
+                return Err(RuleError::Invalid);
+            }
+            Ok(Predicate::Range(id.clone(), min, max))
+        }
+        Rule::OneOf { values, .. } => {
+            let FieldType::Choice { options } = &field.kind else {
+                return Err(RuleError::Type);
+            };
+            if values.is_empty() || values.len() > MAX_ITEMS {
+                return Err(RuleError::Invalid);
+            }
+            if values.iter().any(|v| !options.iter().any(|o| o.id == *v)) {
+                return Err(RuleError::Type);
+            }
+            Ok(Predicate::OneOf(id.clone(), values.clone()))
+        }
+        Rule::Block { .. } => unreachable!("handled above"),
+    }
+}
+
+/// Owner of a failing rule, relative to `matches(a, b)`.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    /// First participant.
+    A,
+    /// Second participant.
+    B,
+}
+
+/// Why a pair fails to match; no rule bounds or profile values are disclosed.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MatchReason {
+    /// Communities or complete schema definitions differ.
+    Schema,
+    /// A member was paired with itself.
+    SameMember,
+    /// An explicit block applies.
+    Blocked,
+    /// A rule's target field has no answer.
+    Missing,
+    /// Typed equality or a choice set failed.
+    Different,
+    /// A number falls outside an inclusive interval.
+    OutsideRange,
+}
+
+/// Owner-facing explanation; the owner can resolve `rule_index` in its rules.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MatchFailure {
+    /// Rule owner, absent for a pair-level failure.
+    pub owner: Option<Side>,
+    /// Zero-based rule position, absent for a pair-level failure.
+    pub rule_index: Option<usize>,
+    /// Declared public field, absent for blocks and pair-level failures.
+    pub field: Option<String>,
+    /// Stable reason without values.
+    pub reason: MatchReason,
+}
+
+/// Reciprocal matching result in A-rule order followed by B-rule order.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MatchResult {
+    /// Empty exactly when both participants accept each other.
+    pub failures: Vec<MatchFailure>,
+}
+
+impl MatchResult {
+    /// Whether both directions passed.
+    pub fn is_match(&self) -> bool {
+        self.failures.is_empty()
+    }
+
+    /// Requester-safe disclosure: only failing field names, in sorted order.
+    /// Blocks and pair-level failures yield no field; use a generic refusal.
+    pub fn requester_fields(&self) -> Vec<String> {
+        self.failures
+            .iter()
+            .filter_map(|f| f.field.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    }
+}
+
+/// Evaluate both sets of rules. Missing fields always fail, even equality
+/// against null. A block in either direction prevents a match.
+pub fn matches(a: &Participant, b: &Participant) -> MatchResult {
+    let pair_reason = if a.schema != b.schema {
+        Some(MatchReason::Schema)
+    } else if a.member == b.member {
+        Some(MatchReason::SameMember)
+    } else {
+        None
+    };
+    if let Some(reason) = pair_reason {
+        return MatchResult {
+            failures: vec![MatchFailure {
+                owner: None,
+                rule_index: None,
+                field: None,
+                reason,
+            }],
+        };
+    }
+    let mut failures = Vec::new();
+    for (owner, source, target) in [(Side::A, a, b), (Side::B, b, a)] {
+        for (index, rule) in source.rules.iter().enumerate() {
+            let (field, reason) = evaluate_rule(rule, target);
+            if let Some(reason) = reason {
+                failures.push(MatchFailure {
+                    owner: Some(owner),
+                    rule_index: Some(index),
+                    field: field.cloned(),
+                    reason,
+                });
+            }
+        }
+    }
+    MatchResult { failures }
+}
+
+fn evaluate_rule<'a>(
+    rule: &'a Predicate,
+    target: &Participant,
+) -> (Option<&'a String>, Option<MatchReason>) {
+    let field = match rule {
+        Predicate::Equal(field, _) | Predicate::Range(field, _, _) | Predicate::OneOf(field, _) => {
+            field
+        }
+        Predicate::Block(member) => {
+            return (
+                None,
+                (member == &target.member).then_some(MatchReason::Blocked),
+            );
+        }
+    };
+    let Some(value) = target.attributes.get(field) else {
+        return (Some(field), Some(MatchReason::Missing));
+    };
+    let reason = match rule {
+        Predicate::Equal(_, expected) => (value != expected).then_some(MatchReason::Different),
+        Predicate::Range(_, min, max) => match value {
+            Attribute::Number(n) => (n < min || n > max).then_some(MatchReason::OutsideRange),
+            _ => Some(MatchReason::Different),
+        },
+        Predicate::OneOf(_, values) => match value {
+            Attribute::Text(text) => (!values.contains(text)).then_some(MatchReason::Different),
+            _ => Some(MatchReason::Different),
+        },
+        Predicate::Block(_) => unreachable!("handled above"),
+    };
+    (Some(field), reason)
+}

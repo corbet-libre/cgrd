@@ -9,10 +9,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -20,8 +25,41 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: rustc --version
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
-      - run: cargo check --target wasm32-unknown-unknown
+      - name: Resolve initial dependency snapshot
+        run: if [ ! -f Cargo.lock ]; then cargo generate-lockfile; fi
+      - name: Check unique pinned leaf revisions
+        run: |
+          cargo metadata --locked --all-features --format-version 1 > "$RUNNER_TEMP/dependency-metadata.json"
+          node .github/check-pins.mjs "$RUNNER_TEMP/dependency-metadata.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cargo-lock
+          path: Cargo.lock
+          retention-days: 7
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+        env:
+          CGRD_VECTOR_OUTPUT: ${{ runner.temp }}/cgrd-admission.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signed-wire-vector
+          path: ${{ runner.temp }}/cgrd-admission.json
+          retention-days: 7
+      - run: cargo check --locked --target wasm32-unknown-unknown
+      - name: Install the matching prebuilt wasm test runner
+        shell: bash
+        run: |
+          version=$(python3 -c 'import tomllib; print(next(p["version"] for p in tomllib.load(open("Cargo.lock", "rb"))["package"] if p["name"] == "wasm-bindgen"))')
+          archive="wasm-bindgen-${version}-x86_64-unknown-linux-musl"
+          curl --fail --location --retry 3 "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${version}/${archive}.tar.gz" -o "$RUNNER_TEMP/wasm-bindgen.tar.gz"
+          tar -xzf "$RUNNER_TEMP/wasm-bindgen.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$archive" >> "$GITHUB_PATH"
+      - name: Execute identical shared vectors in wasm
+        run: cargo test --locked --target wasm32-unknown-unknown --no-default-features --test shared

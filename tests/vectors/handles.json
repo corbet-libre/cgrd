@@ -1,0 +1,14 @@
+[
+  {"input":"mountain","normalized":"mountain","error":null},
+  {"input":"MOUNTAIN","normalized":"mountain","error":null},
+  {"input":"ＭＯＵＮＴＡＩＮ","normalized":"mountain","error":null},
+  {"input":"abcdefgh","normalized":"abcdefgh","error":null},
+  {"input":"abcdefghijklmnopqrstuvwxyzabcdef","normalized":"abcdefghijklmnopqrstuvwxyzabcdef","error":null},
+  {"input":"abcdefg","normalized":null,"error":"length"},
+  {"input":"abcdefghijklmnopqrstuvwxyzabcdefg","normalized":null,"error":"length"},
+  {"input":"mount ain","normalized":null,"error":"precis"},
+  {"input":"mountаin","normalized":null,"error":"mixed_script"},
+  {"input":"mountain\u0000","normalized":null,"error":"precis"},
+  {"input":"fuckfuck","normalized":null,"error":"profanity"},
+  {"input":"abcdefgh\u202e","normalized":null,"error":"precis"}
+]
