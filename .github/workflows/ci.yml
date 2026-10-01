@@ -130,7 +130,7 @@ jobs:
             coverage.json
             coverage.txt
             coverage.lcov
-      - run: python3 .github/check-coverage.py coverage.json
+      - run: python3 .github/check-coverage.py coverage.lcov
   dependency-policy:
     needs: resolve
     runs-on: ubuntu-24.04

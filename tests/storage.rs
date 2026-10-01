@@ -281,6 +281,14 @@ async fn corrupted_database_rows_and_ignored_writes_fail_closed() {
                 .await,
             Err(StorageError::Invalid)
         );
+        // A write must refuse corrupt current state, not silently repair it.
+        assert_eq!(
+            LibsqlStore::new(&db, name)
+                .unwrap()
+                .save(&record(name, 2, 1))
+                .await,
+            Err(StorageError::Invalid)
+        );
     }
     db.community("text").unwrap().execute("INSERT INTO cgrd_snapshots (kind, revision, policy_epoch, cose) VALUES (?1, ?2, ?3, ?4)",crlt::params!["settings",1i64,0i64,"not a blob"]).await.unwrap();
     assert_eq!(
