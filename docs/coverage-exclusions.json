@@ -1,7 +1,7 @@
 [
   {
     "path": "src/matching.rs",
-    "line": 109,
+    "line": 120,
     "source": ".map_err(|_| RuleError::Type)?",
     "reason": "Defensive error conversion for serializing a tuple of concrete PublicProfile, Schema and Rule values. Their derived serialization uses string map keys and valid serde_json::Value numbers, with no fallible custom serializer; allocation failure aborts rather than returning this error. The actual encoded-size limit and all operator/profile refusal paths remain measured. Reassess if any input type gains fallible serialization."
   }

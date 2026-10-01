@@ -21,6 +21,14 @@ verify the identical [v2 signed fixture](tests/vectors/admission.json) and
 reject the [legacy signed fixture](tests/vectors/admission-v1.json), generated
 with public deterministic fixture keys on GitHub Actions.
 
+## Scope
+
+Guard validates person and profile together, evaluates reciprocal public rules,
+and checks handles. It owns no member registry, private-profile search, ranking
+or network I/O. Signed issuer policy stays with Rulebook and csgn; geographic
+rules delegate WGS84 geodesics to GeographicLib. Time and trust material are
+caller-supplied, and missing authority or profile evidence fails closed.
+
 ## Dependency survey
 
 Surveyed crates.io metadata and upstream GitHub sources on 2026-09-30:
@@ -37,6 +45,16 @@ Surveyed crates.io metadata and upstream GitHub sources on 2026-09-30:
 | [censor 0.3.0](https://github.com/kaikalii/censor) | Considered; older release and less comprehensive evasion handling than rustrict. |
 | [cel-interpreter 0.10](https://github.com/cel-rust/cel-rust), [cedar-policy 4.13](https://github.com/cedar-policy/cedar) | Considered; general expression/authorization languages add semantics and capabilities this bounded, typed matching contract does not need. Keep a small conjunction dispatcher, delegate validation to cshm and exact numeric comparisons to BigDecimal. |
 | [bigdecimal 0.4](https://github.com/akubera/bigdecimal-rs) | Exact decimal/scientific-notation comparisons, without platform-dependent binary floating point. Bound input length and exponent before comparison. |
+
+The distance extension was surveyed on 2026-10-01. Use
+[geographiclib-rs](https://docs.rs/geographiclib-rs/latest/geographiclib_rs/) with
+compatible `0.2` updates and polygon-only accuracy features disabled: it provides
+the maintained Rust WGS84 inverse calculation and upstream boundary vectors.
+[GeoRust geo](https://github.com/georust/geo) wraps the same engine with additional
+geometry APIs this rule does not need. The C-backed `geographiclib` crate adds an
+unneeded foreign runtime for the shared wasm target. No geodesic primitive is
+implemented here. Exact numeric/location equality continues to use BigDecimal;
+derived distance has the upstream floating-point precision documented in CONTRACT.
 
 First-party dependencies follow main and resolve to one full revision per crate
 in the shared CI lock snapshot. Portable crbk supplies the complete admission

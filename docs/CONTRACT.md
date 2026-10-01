@@ -104,13 +104,25 @@ have exactly the same schema definition/community/version and different
 member IDs. Invalid rules never become vacuously successful.
 
 Rules form a bounded conjunction: typed `equal`, inclusive `number_range`,
-choice `one_of`, and `block` by member pseudonym. Equality covers boolean,
+choice `one_of`, WGS84 `distance_range`, and `block` by member pseudonym. Equality covers boolean,
 number, choice, text and exact location coordinates. Text/choice equality is
 case-sensitive. Numeric equality and ranges use BigDecimal, including
 scientific notation, never f64. Numeric text uses the shared cshm parser: at most 128 bytes, explicit exponent
 and resulting scale in -128..=128, checked before exact arithmetic. Both profile
 validation and matching can reject extremely large
-numbers that cshm accepts. There is no distance calculation or scripting.
+numbers that cshm accepts. No scripting is accepted.
+
+`distance_range` has `field`, `min_meters` and `max_meters`. It compares the
+WGS84 ellipsoidal geodesic between the owner's and candidate's value of the same
+public, filterable location field. Both bounds are inclusive nonnegative decimal
+strings using the same size/exponent limits; inverted bounds refuse construction.
+The owner must provide that location to construct the rule; a missing candidate
+location fails the match. Each participant's bounds apply independently.
+GeographicLib supplies the inverse calculation, including poles, antimeridian and
+antipodal cases. Coordinates retain their original exact decimal representation;
+only the derived geodesic uses the maintained library's f64 precision. No grid,
+coarsening, altitude, route length or ranking is introduced. Nonfinite output
+refuses the comparison. Existing exact location equality is unchanged.
 Missing optional values fail an applicable rule. A block in either direction
 prevents a match. A's failures precede B's, each in source rule order.
 

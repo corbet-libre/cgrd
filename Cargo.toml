@@ -27,6 +27,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 thiserror = "2"
 bigdecimal = "0.4.11"
+geographiclib-rs = { version = "0.2", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 crlt = { git = "https://github.com/corbet-foss/crlt", branch = "main", optional = true }
