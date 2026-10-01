@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
-use geographiclib_rs::{Geodesic, InverseGeodesic};
 use cshm::{FieldType, PublicProfile, Schema};
+use geographiclib_rs::{Geodesic, InverseGeodesic};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -235,18 +235,28 @@ fn compile_rule(
             }
             Ok(Predicate::Range(id.clone(), min, max))
         }
-        Rule::DistanceRange { field: id, min_meters, max_meters } => {
+        Rule::DistanceRange {
+            field: id,
+            min_meters,
+            max_meters,
+        } => {
             if !matches!(field(id)?.kind, FieldType::Location) {
                 return Err(RuleError::Type);
             }
             let (min, max) = (number(min_meters)?, number(max_meters)?);
-            if min < BigDecimal::from(0) || min > max {
+            if min < 0 || min > max {
                 return Err(RuleError::Invalid);
             }
             let Some(Attribute::Location(latitude, longitude)) = attributes.get(id) else {
                 return Err(RuleError::Profile);
             };
-            Ok(Predicate::Distance(id.clone(), latitude.clone(), longitude.clone(), min, max))
+            Ok(Predicate::Distance(
+                id.clone(),
+                latitude.clone(),
+                longitude.clone(),
+                min,
+                max,
+            ))
         }
         Rule::OneOf { field: id, values } => {
             let FieldType::Choice { options } = &field(id)?.kind else {
