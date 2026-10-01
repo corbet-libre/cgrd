@@ -303,11 +303,31 @@ pub fn check_with_contact(
     }
 }
 
-pub(crate) fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Refusal> {
+fn bounded(bytes: &[u8], refusal: Refusal) -> Result<(), Refusal> {
     if bytes.len() > MAX_DOCUMENT_BYTES {
-        return Err(Refusal::Malformed);
+        return Err(refusal);
     }
+    Ok(())
+}
+
+pub(crate) fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Refusal> {
+    bounded(bytes, Refusal::Malformed)?;
     serde_json::from_slice(bytes).map_err(|_| Refusal::Malformed)
+}
+
+fn snapshot_scope(community: &str, declared: &str, revision: u64) -> Result<(), Refusal> {
+    if declared != community || revision == 0 {
+        return Err(Refusal::Snapshot);
+    }
+    Ok(())
+}
+
+fn snapshot_input(bytes: &[u8], community: &str, keys: &KeyRing) -> Result<(), Refusal> {
+    bounded(bytes, Refusal::Snapshot)?;
+    if keys.issuer() != community {
+        return Err(Refusal::Snapshot);
+    }
+    Ok(())
 }
 
 pub(crate) fn snapshot<T: DeserializeOwned>(
@@ -317,16 +337,12 @@ pub(crate) fn snapshot<T: DeserializeOwned>(
     kind: Kind,
     now: u64,
 ) -> Result<(Snapshot<T>, u64), Refusal> {
-    if bytes.len() > MAX_DOCUMENT_BYTES || keys.issuer() != community {
-        return Err(Refusal::Snapshot);
-    }
+    snapshot_input(bytes, community, keys)?;
     let signed = keys
         .verify(bytes, kind, now)
         .map_err(|_| Refusal::Snapshot)?;
     let snapshot: Snapshot<T> = parse(signed.payload()).map_err(|_| Refusal::Snapshot)?;
-    if snapshot.community != community || snapshot.revision == 0 {
-        return Err(Refusal::Snapshot);
-    }
+    snapshot_scope(community, &snapshot.community, snapshot.revision)?;
     Ok((snapshot, signed.issued_at()))
 }
 

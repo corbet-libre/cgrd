@@ -22,3 +22,9 @@ The common credential verifier requires every proof expiry to cover the signed
 credential lifetime, and csgn requires that lifetime to include the supplied
 clock. The legacy required-gate loop therefore no longer repeats the implied
 proof-expiry comparison. The mandatory common lifetime check remains tested.
+
+Input size and snapshot scope checks use shared non-generic helpers. Every
+snapshot payload type passes the same checks before typed use; contact detection
+also uses one borrowed callback body. This avoids duplicate generic validation
+bodies in instrumentation without changing refusals. CI retains LLVM's annotated
+text with instantiations from the same test execution for remaining-gap review.

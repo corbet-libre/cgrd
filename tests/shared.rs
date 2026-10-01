@@ -1066,3 +1066,24 @@ shared_test!(snapshot_storage_refuses_signed_invalid_schema_definition, {
         Err(StorageError::Invalid)
     ));
 });
+
+shared_test!(every_field_rule_checks_filterability_before_its_operator, {
+    let definition = schema("garden");
+    let public = profile("garden");
+    for rule in [
+        Rule::NumberRange {
+            field: "missing".into(),
+            min: "0".into(),
+            max: "1".into(),
+        },
+        Rule::OneOf {
+            field: "missing".into(),
+            values: vec!["hiking".into()],
+        },
+    ] {
+        assert!(matches!(
+            Participant::new("member", &public, &definition, &[rule]),
+            Err(RuleError::NotFilterable)
+        ));
+    }
+});
