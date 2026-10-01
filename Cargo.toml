@@ -15,23 +15,24 @@ default = ["storage"]
 storage = ["dep:crlt"]
 
 [dependencies]
-csgn = { git = "https://github.com/corbet-foss/csgn", rev = "3ea958b522a15fecf65630aae1f9944135105497", default-features = false }
-cshm = { git = "https://github.com/corbet-foss/cshm", rev = "01e259cad7e64cb2150344153ae350a23d05f478" }
-cpns = { git = "https://github.com/corbet-foss/cpns", rev = "d68a3f3a2df322c513d0e754e452ee02aab7a5b9", default-features = false }
+crbk = { git = "https://github.com/corbet-foss/crbk", branch = "main", default-features = false }
+csgn = { git = "https://github.com/corbet-foss/csgn", branch = "main", default-features = false }
+cshm = { git = "https://github.com/corbet-foss/cshm", branch = "main" }
+cpns = { git = "https://github.com/corbet-foss/cpns", branch = "main", default-features = false }
 ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
-precis-profiles = "=0.2.0"
-unicode-security = "=0.1.2"
-rustrict = { version = "=0.7.39", default-features = false, features = ["censor"] }
+precis-profiles = "0.2.0"
+unicode-security = "0.1.2"
+rustrict = { version = "0.7.39", default-features = false, features = ["censor"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 thiserror = "2"
 bigdecimal = "0.4.11"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-crlt = { git = "https://github.com/corbet-foss/crlt", rev = "80dc046d6ab53b3ea530c45bf3d7038c8b2c61b2", optional = true }
+crlt = { git = "https://github.com/corbet-foss/crlt", branch = "main", optional = true }
 
 [dev-dependencies]
-csgn = { git = "https://github.com/corbet-foss/csgn", rev = "3ea958b522a15fecf65630aae1f9944135105497", features = ["volatile-signer"] }
+csgn = { git = "https://github.com/corbet-foss/csgn", branch = "main", features = ["volatile-signer"] }
 coset = "0.4.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]

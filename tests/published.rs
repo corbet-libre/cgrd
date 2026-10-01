@@ -1,0 +1,196 @@
+//! Full signed policy and separate revocations execute identically on devices.
+mod common;
+use cgrd::*;
+use common::*;
+use serde_json::{Value, json};
+
+macro_rules! shared_test {
+    ($name:ident, $body:block) => {
+        #[cfg_attr(target_arch = "wasm32", wasm_bindgen_test::wasm_bindgen_test)]
+        #[cfg_attr(not(target_arch = "wasm32"), test)]
+        fn $name() $body
+    };
+}
+
+fn requirement(gate: &str) -> Value {
+    json!({"gate":gate,"level":"community","provider":"community"})
+}
+fn settings(policy: Value) -> Value {
+    json!({
+        "community":"garden", "revision":1, "policy_epoch":2,
+        "content": {
+            "action/admission":policy,
+            "gate/community/voucher":true,
+            "provider/community/voucher/community":true,
+            "gate/community/other":true,
+            "provider/community/other/community":true
+        }
+    })
+}
+fn action() -> Value {
+    json!({"all_of":[],"any_of":[],"k_of_n":null,"maximum_proof_age":null,"membership":["admitted"]})
+}
+fn revocations() -> Value {
+    json!({"community":"garden","revision":1,"policy_epoch":2,"content":{"members":[],"devices":[]}})
+}
+fn check_fixture(f: &mut Fixture, settings: &Value, revocations: &Value) -> Admission {
+    let mut signed = f.issue();
+    signed.settings = sign(&mut f.issuer, csgn::Kind::SettingsSnapshot, settings);
+    let revoked = sign(
+        &mut f.issuer,
+        csgn::Kind::RevocationListSnapshot,
+        revocations,
+    );
+    let policy = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &revoked,
+        minimum_revocations_revision: 1,
+        action: "admission",
+    };
+    check_published(&signed.bundle, &policy, &signed.schema)
+}
+
+shared_test!(complete_all_any_threshold_policy_preserves_binding, {
+    for group in ["all_of", "any_of", "k_of_n"] {
+        let mut f = Fixture::new();
+        let mut policy = action();
+        policy[group] = match group {
+            "all_of" => json!([requirement("voucher")]),
+            "any_of" => json!([requirement("other"), requirement("voucher")]),
+            _ => json!({"k":1,"of":[requirement("other"),requirement("voucher")]}),
+        };
+        let signed_settings = settings(policy);
+        assert!(check_fixture(&mut f, &signed_settings, &revocations()).is_admitted());
+        f.credential.gates.clear();
+        refused(
+            check_fixture(&mut f, &signed_settings, &revocations()),
+            Refusal::Gate,
+        );
+    }
+    let mut f = Fixture::new();
+    let mut policy = action();
+    policy["k_of_n"] = json!({"k":2,"of":[requirement("voucher"),requirement("other")]});
+    refused(
+        check_fixture(&mut f, &settings(policy.clone()), &revocations()),
+        Refusal::Gate,
+    );
+    f.credential.gates.push(Gate {
+        gate: "other".into(),
+        provider: "community".into(),
+        valid_until: EXPIRY,
+    });
+    assert!(check_fixture(&mut f, &settings(policy), &revocations()).is_admitted());
+});
+
+shared_test!(rich_policy_never_infers_absent_evidence, {
+    let mut f = Fixture::new();
+    let mut policy = action();
+    policy["all_of"] = json!([requirement("voucher")]);
+    for case in 0..9 {
+        let mut settings = settings(policy.clone());
+        match case {
+            0 => settings["content"]["gate/community/voucher"] = json!(false),
+            1 => settings["content"]["provider/community/voucher/community"] = json!(false),
+            2 => settings["content"]["action/admission"]["maximum_proof_age"] = json!(300),
+            3 => settings["content"]["action/admission"]["all_of"][0]["level"] = json!("global"),
+            4 => settings["content"]["action/admission"]["membership"] = json!(["pending"]),
+            5 => settings["content"]
+                .as_object_mut()
+                .unwrap()
+                .remove("action/admission")
+                .map(|_| ())
+                .unwrap(),
+            6 => settings["content"]["action/admission"]["k_of_n"] = json!({"k":0,"of":[]}),
+            7 => settings["content"]["action/admission"]["unexpected"] = json!(true),
+            _ => settings["content"]["action/admission"]["all_of"][0]["provider"] = json!("wrong"),
+        }
+        refused(
+            check_fixture(&mut f, &settings, &revocations()),
+            Refusal::Gate,
+        );
+    }
+});
+
+shared_test!(separate_revocations_and_epoch_are_mandatory, {
+    let mut f = Fixture::new();
+    for case in 0..6 {
+        let mut revoked = revocations();
+        let expected = match case {
+            0 => {
+                revoked["content"]["members"] = json!(["alice"]);
+                Refusal::Revoked
+            }
+            1 => {
+                revoked["content"]["devices"] = json!([f.body.device]);
+                Refusal::Revoked
+            }
+            2 => {
+                revoked["policy_epoch"] = json!(3);
+                Refusal::Snapshot
+            }
+            3 => {
+                revoked["community"] = json!("other");
+                Refusal::Snapshot
+            }
+            4 => {
+                revoked["revision"] = json!(0);
+                Refusal::Snapshot
+            }
+            _ => {
+                revoked["content"]["members"] = json!([""]);
+                Refusal::Metadata
+            }
+        };
+        refused(
+            check_fixture(&mut f, &settings(action()), &revoked),
+            expected,
+        );
+    }
+    let signed = f.issue();
+    let policy = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &[],
+        minimum_revocations_revision: 1,
+        action: "admission",
+    };
+    refused(
+        check_published(&signed.bundle, &policy, &signed.schema),
+        Refusal::Snapshot,
+    );
+});
+
+shared_test!(
+    rich_policy_still_requires_device_profile_and_pin_evidence,
+    {
+        for case in 0..4 {
+            let mut f = Fixture::new();
+            let expected = match case {
+                0 => {
+                    f.credential.devices = vec![[0; 32]];
+                    Refusal::UnauthorizedDevice
+                }
+                1 => {
+                    f.body.device = [0; 32];
+                    Refusal::UnauthorizedDevice
+                }
+                2 => {
+                    f.body.openings.clear();
+                    Refusal::Pin
+                }
+                _ => {
+                    f.credential.pins[0].fingerprint[0] ^= 1;
+                    Refusal::Pin
+                }
+            };
+            refused(
+                check_fixture(&mut f, &settings(action()), &revocations()),
+                expected,
+            );
+        }
+        let mut f = Fixture::new();
+        f.public_mut().public.insert("age".into(), json!(12));
+        assert!(
+            matches!(check_fixture(&mut f, &settings(action()), &revocations()), Admission::Refused { reasons } if matches!(&reasons[0], Refusal::Profile(_)))
+        );
+    }
+);

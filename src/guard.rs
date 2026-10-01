@@ -26,6 +26,189 @@ pub struct Policy<'a> {
     pub settings: &'a [u8],
 }
 
+/// Complete cplc publications, kept as their original signed bytes.
+/// Construct from a current authenticated Charter or equivalent trusted floors.
+pub struct PublishedPolicy<'a> {
+    /// Shared authority, clock, settings bytes and revision floors.
+    pub policy: Policy<'a>,
+    /// Original separate `RevocationListSnapshot` bytes.
+    pub revocations: &'a [u8],
+    /// Lowest authenticated revocation publication revision.
+    pub minimum_revocations_revision: u64,
+    /// Rulebook action selected by trusted application configuration.
+    pub action: &'a str,
+}
+
+/// Verify a presentation using the complete flat Rulebook policy and separate
+/// revocations. Missing global proofs or proof times fail closed in Rulebook.
+pub fn check_published(bundle: &Bundle, policy: &PublishedPolicy<'_>, schema: &[u8]) -> Admission {
+    check_published_with_contact(bundle, policy, schema, &|_| cshm::ContactCheck::Unavailable)
+}
+
+/// As [`check_published`], with a deterministic contact detector.
+pub fn check_published_with_contact(
+    bundle: &Bundle,
+    policy: &PublishedPolicy<'_>,
+    schema: &[u8],
+    contact: &impl Fn(&str) -> cshm::ContactCheck,
+) -> Admission {
+    match evaluate_published(bundle, policy, schema, contact) {
+        Ok(admission) => admission,
+        Err(reason) => Admission::Refused {
+            reasons: vec![reason],
+        },
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Revocations {
+    members: BTreeSet<String>,
+    devices: BTreeSet<[u8; 32]>,
+}
+
+struct VerifiedRules {
+    epoch: u64,
+    schema: cshm::Schema,
+    revocations: Revocations,
+    reserved_handles: Vec<String>,
+    gates: GatePolicy,
+}
+
+enum GatePolicy {
+    Legacy(Vec<GateRequirement>),
+    Published {
+        snapshot: crbk::Snapshot,
+        action: String,
+    },
+}
+
+impl GatePolicy {
+    fn check(&self, credential: &Credential, now: u64) -> Result<(), Refusal> {
+        let allowed = match self {
+            Self::Legacy(required) => required.iter().all(|required| {
+                credential.gates.iter().any(|g| {
+                    g.gate == required.gate
+                        && g.valid_until > now
+                        && required.providers.contains(&g.provider)
+                })
+            }),
+            Self::Published { snapshot, action } => {
+                let gates = credential
+                    .gates
+                    .iter()
+                    .map(|gate| {
+                        Ok(crbk::GateResult {
+                            gate: gate.gate.clone(),
+                            level: crbk::GateLevel::Community,
+                            subject: credential.member.clone(),
+                            community: Some(credential.community.clone()),
+                            provider: gate.provider.clone(),
+                            valid_until: i64::try_from(gate.valid_until)
+                                .map_err(|_| Refusal::Gate)?,
+                            // cplc intentionally does not disclose this metadata.
+                            proven_at: None,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Refusal>>()?;
+                snapshot
+                    .may(
+                        crbk::Subject {
+                            id: &credential.member,
+                            membership: crbk::MembershipState::Admitted,
+                        },
+                        action,
+                        &gates,
+                        i64::try_from(now).map_err(|_| Refusal::Gate)?,
+                    )
+                    .map_err(|_| Refusal::Gate)?
+                    .allowed
+            }
+        };
+        if allowed { Ok(()) } else { Err(Refusal::Gate) }
+    }
+}
+
+fn evaluate_published(
+    bundle: &Bundle,
+    published: &PublishedPolicy<'_>,
+    schema_bytes: &[u8],
+    contact: &impl Fn(&str) -> cshm::ContactCheck,
+) -> Result<Admission, Refusal> {
+    let policy = &published.policy;
+    let (settings, settings_issued) = snapshot::<crbk::Values>(
+        policy.settings,
+        policy.community,
+        policy.keys,
+        Kind::SettingsSnapshot,
+        policy.now,
+    )?;
+    let (schema, schema_issued) = snapshot::<cshm::Schema>(
+        schema_bytes,
+        policy.community,
+        policy.keys,
+        Kind::SchemaSnapshot,
+        policy.now,
+    )?;
+    let (revocations, revocations_issued) = snapshot::<Revocations>(
+        published.revocations,
+        policy.community,
+        policy.keys,
+        Kind::RevocationListSnapshot,
+        policy.now,
+    )?;
+    if settings.revision < policy.minimum_settings_revision
+        || schema.revision < policy.minimum_schema_revision
+        || revocations.revision < published.minimum_revocations_revision
+        || settings.policy_epoch < policy.minimum_epoch
+        || settings.policy_epoch != schema.policy_epoch
+        || settings.policy_epoch != revocations.policy_epoch
+        || schema.content.community != policy.community
+    {
+        return Err(Refusal::Snapshot);
+    }
+    if [settings_issued, schema_issued, revocations_issued]
+        .iter()
+        .any(|issued| policy.now.saturating_sub(*issued) > policy.maximum_snapshot_age)
+    {
+        return Err(Refusal::StaleSnapshot);
+    }
+    if revocations.content.members.len() > MAX_ITEMS
+        || revocations.content.devices.len() > MAX_ITEMS
+        || revocations
+            .content
+            .members
+            .iter()
+            .any(|member| !identifier(member))
+        || schema.content.public.len() + schema.content.private.len() > MAX_ITEMS
+    {
+        return Err(Refusal::Metadata);
+    }
+    // This is the exact authenticated flat content, with the protected issuance
+    // time restored for the upstream evaluator. No settings are synthesized.
+    let snapshot = crbk::Snapshot {
+        community: settings.community,
+        kind: crbk::SnapshotKind::Settings,
+        revision: settings.revision,
+        policy_epoch: settings.policy_epoch,
+        issued: i64::try_from(settings_issued).map_err(|_| Refusal::Snapshot)?,
+        content: settings.content,
+    };
+    // Reserved handles are membership-owned. No unsigned override is accepted;
+    // the credential attests reservation, while Guard checks canonical spelling.
+    let rules = VerifiedRules {
+        epoch: settings.policy_epoch,
+        schema: schema.content,
+        revocations: revocations.content,
+        reserved_handles: vec![],
+        gates: GatePolicy::Published {
+            snapshot,
+            action: published.action.into(),
+        },
+    };
+    evaluate_authenticated(bundle, policy, &rules, contact)
+}
+
 /// Stable refusal codes. They never include profile answers, salts or raw gates.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "code", content = "detail", rename_all = "snake_case")]
@@ -213,7 +396,26 @@ fn evaluate(
     {
         return Err(Refusal::Metadata);
     }
-    let compiled = schema.content.compile().map_err(|_| Refusal::Snapshot)?;
+    let rules = VerifiedRules {
+        epoch: settings.policy_epoch,
+        schema: schema.content,
+        revocations: Revocations {
+            members: settings.content.revoked_members.into_iter().collect(),
+            devices: settings.content.revoked_devices.into_iter().collect(),
+        },
+        reserved_handles: settings.content.reserved_handles,
+        gates: GatePolicy::Legacy(settings.content.required_gates),
+    };
+    evaluate_authenticated(bundle, policy, &rules, contact)
+}
+
+fn evaluate_authenticated(
+    bundle: &Bundle,
+    policy: &Policy<'_>,
+    rules: &VerifiedRules,
+    contact: &impl Fn(&str) -> cshm::ContactCheck,
+) -> Result<Admission, Refusal> {
+    let compiled = rules.schema.compile().map_err(|_| Refusal::Snapshot)?;
     let body: BundleContent = parse(&bundle.payload)?;
     if body.credential.len() > MAX_DOCUMENT_BYTES || body.openings.len() > MAX_ITEMS {
         return Err(Refusal::Malformed);
@@ -230,9 +432,7 @@ fn evaluate(
     {
         return Err(Refusal::Subject);
     }
-    if credential.policy_epoch != settings.policy_epoch
-        || credential.schema_version != schema.content.version
-    {
+    if credential.policy_epoch != rules.epoch || credential.schema_version != rules.schema.version {
         return Err(Refusal::Version);
     }
     if credential.devices.is_empty()
@@ -249,8 +449,8 @@ fn evaluate(
     {
         return Err(Refusal::Metadata);
     }
-    if settings.content.revoked_members.contains(&body.member)
-        || settings.content.revoked_devices.contains(&body.device)
+    if rules.revocations.members.contains(&body.member)
+        || rules.revocations.devices.contains(&body.device)
     {
         return Err(Refusal::Revoked);
     }
@@ -265,18 +465,12 @@ fn evaluate(
         .gates
         .iter()
         .any(|g| g.valid_until < signed.valid_until())
-        || settings.content.required_gates.iter().any(|required| {
-            !credential.gates.iter().any(|g| {
-                g.gate == required.gate
-                    && g.valid_until > policy.now
-                    && required.providers.contains(&g.provider)
-            })
-        })
     {
         return Err(Refusal::Gate);
     }
-    let handle = check_handle(&credential.handle, &settings.content.reserved_handles)
-        .map_err(|_| Refusal::Handle)?;
+    rules.gates.check(&credential, policy.now)?;
+    let handle =
+        check_handle(&credential.handle, &rules.reserved_handles).map_err(|_| Refusal::Handle)?;
     if handle.normalized != credential.handle {
         return Err(Refusal::Handle);
     }
@@ -287,7 +481,7 @@ fn evaluate(
     if !report.is_valid() {
         return Err(Refusal::Profile(report.violations));
     }
-    check_pins(&body, &credential, &schema.content)?;
+    check_pins(&body, &credential, &rules.schema)?;
     Ok(Admission::Admitted {
         community: credential.community,
         member: credential.member,

@@ -178,12 +178,28 @@ boundaries and snapshot-cache verification, and messages exceeding the
 authenticated ring's lifetime limit.
 The accepted frozen fixture contains cpns v2 pins and a csgn v2 key ring;
 native and wasm must verify identical bytes and reproduce them deterministically.
-All corbet-foss leaves are pinned by full Git revision. CI checks real Cargo
-metadata for floating declarations, mismatched resolved commits and duplicate
-leaf packages across the dependency graph.
+First-party dependencies follow main. CI resolves one lock snapshot shared by all
+jobs and rejects inconsistent first-party revisions across the graph.
 
 The community issuer must adopt this credential/device-authorization wire
 format. Trust-root distribution, fresh revocation delivery, persisted floor
 selection, challenges against replay, handle reservation, and application
 contact detection are caller responsibilities. Pin and signature primitives
 remain in established crates. Never publish this crate to a registry.
+
+## Complete cplc publication adapter
+
+`check_published` accepts `PublishedPolicy`: trusted authority/time/floors, the
+original settings, schema and separate revocation COSE bytes, and the trusted
+action name. Every document is authenticated independently with csgn; all epochs
+must agree. Separate member and device revocations are mandatory and checked
+before device binding. The legacy `Settings` format remains supported only by
+`check`; no translation into that format is performed.
+
+The complete signed flat policy is passed to `crbk::Snapshot::may`, retaining
+all/any/threshold groups, switches, providers, membership and proof-age semantics.
+The original credential authenticates only community gate metadata and admitted
+membership, as attested by cplc issuance. No global proof or proof time is
+inferred. A policy requiring unavailable evidence refuses through Rulebook.
+The same credential, device signature, cshm profile and cpns pin checks serve both
+public adapters. Handle reservation remains an issuer/membership responsibility.

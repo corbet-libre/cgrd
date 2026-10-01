@@ -285,6 +285,7 @@ dependencies = [
  "bigdecimal",
  "coset",
  "cpns",
+ "crbk",
  "crlt",
  "csgn",
  "cshm",
@@ -403,7 +404,7 @@ dependencies = [
 [[package]]
 name = "cpns"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cpns?rev=d68a3f3a2df322c513d0e754e452ee02aab7a5b9#d68a3f3a2df322c513d0e754e452ee02aab7a5b9"
+source = "git+https://github.com/corbet-foss/cpns?branch=main#85674ab2e70f11051ba30ab44a8c7d3301ac6ec1"
 dependencies = [
  "getrandom 0.4.3",
  "sha2",
@@ -421,9 +422,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "crbk"
+version = "0.0.0"
+source = "git+https://github.com/corbet-foss/crbk?branch=main#0b2ee6555fda95ff5250334abf409e4d3cba0372"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "crlt"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/crlt?rev=80dc046d6ab53b3ea530c45bf3d7038c8b2c61b2#80dc046d6ab53b3ea530c45bf3d7038c8b2c61b2"
+source = "git+https://github.com/corbet-foss/crlt?branch=main#80dc046d6ab53b3ea530c45bf3d7038c8b2c61b2"
 dependencies = [
  "deadpool",
  "libsql",
@@ -454,7 +465,7 @@ dependencies = [
 [[package]]
 name = "csgn"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/csgn?rev=3ea958b522a15fecf65630aae1f9944135105497#3ea958b522a15fecf65630aae1f9944135105497"
+source = "git+https://github.com/corbet-foss/csgn?branch=main#eac891b771152b17aa3a903edfe9c129e43a371e"
 dependencies = [
  "ciborium-ll",
  "coset",
@@ -467,7 +478,7 @@ dependencies = [
 [[package]]
 name = "cshm"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/cshm?rev=01e259cad7e64cb2150344153ae350a23d05f478#01e259cad7e64cb2150344153ae350a23d05f478"
+source = "git+https://github.com/corbet-foss/cshm?branch=main#9fe8a3271ddecf0846d888d038645a55687c2111"
 dependencies = [
  "bigdecimal",
  "jsonschema",
@@ -965,7 +976,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2",
  "tokio",
  "tower-service",
  "tracing",
@@ -1187,9 +1198,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "657c6a38b0e00dda091d9c006cc1741957ba2377f00dccfd6e79df4c95619bb1"
+checksum = "905edfa6eee835291d6efe33f733f7fcb40c2a24be93b78b74df95e56aef8611"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1217,9 +1228,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-macros"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2a69dfc7e9b2accaa8285e37f99b09e533026a6e16678f9e9dc902b9a47e578"
+checksum = "8123fa451e16474892232c373cedee1b75f48b490c489a499914442108e50933"
 dependencies = [
  "jsonschema-macros-core",
  "proc-macro2",
@@ -1227,9 +1238,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-macros-core"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84287770d96c394d39693aff7a7a9ee3d12e4416456f4b225dd4f84554d642d5"
+checksum = "5a002239f1799082b6ae421fc171e6d30b0e34b257b8729be8810546cee5114e"
 dependencies = [
  "fancy-regex",
  "indexmap",
@@ -1246,18 +1257,18 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "599c68ae272eac23e6525c3fc04a39828ae4a0d76d1fb5ba0e23a6241fd5cbfe"
+checksum = "023cf6b6c38655c1e9cedf72b9c534fd361bd35d20ac06e074f2c93b7dd0836c"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9097316258ece14ed6908011db130c54a11a5bd0c46472b1fe112c8c86261263"
+checksum = "43519639b8e32075ef90a9b6b19136e516a3236b7943c3fe6b1622dafdced8ea"
 dependencies = [
  "ahash",
  "bytecount",
@@ -1272,9 +1283,9 @@ dependencies = [
 
 [[package]]
 name = "lazy_static"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
+checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lazycell"
@@ -1737,7 +1748,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash 2.1.3",
  "rustls",
- "socket2 0.5.10",
+ "socket2",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -1776,9 +1787,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1938,9 +1949,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.58.2"
+version = "0.58.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddfcda65789fdadcc3ddde7b127bd2272deb3fc97fddb4fc94a499f839989990"
+checksum = "ead446bbb5527785ff232eb96625ac03daa627945470374c553db8f13090e30f"
 dependencies = [
  "ahash",
  "fluent-uri",
@@ -2155,7 +2166,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2350,16 +2361,6 @@ name = "smallvec"
 version = "1.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9395f0f0eee849a9b707b2f06bb92a6a422090e2123bb2ef8e87a0e61892a8e"
-
-[[package]]
-name = "socket2"
-version = "0.5.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e22376abed350d73dd1cd119b57ffccad95b4e585a7cda43e286245ce23c0678"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
-]
 
 [[package]]
 name = "socket2"
@@ -2560,7 +2561,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
- "socket2 0.6.5",
+ "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -3107,9 +3108,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",

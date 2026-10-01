@@ -107,3 +107,21 @@ returned skeleton by the register, outside this crate.
 ## License
 
 Copyright 2026 Julian Y. Richard Corbet. Licensed under [LGPL-3.0-only](LICENSES/LGPL-3.0-only.txt) [WITH LGPL-3.0-linking-exception](LICENSES/LGPL-3.0-linking-exception.txt). See [LICENSE.md](LICENSE.md).
+
+## Dependency maintenance and coverage
+
+First-party dependencies follow `main`; Cargo.lock records one exact revision
+per crate. CI checks the entire resolved graph, including optional declarations.
+Dependabot covers Cargo and GitHub Actions (there is no npm manifest here).
+The merge workflow uses GitHub metadata only and requires every substantive CI
+job and all published checks to succeed on the exact Dependabot head. It never
+executes PR code with write permissions or bypasses branch protection.
+
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) supplies LLVM line and
+branch measurements; the strict gate and exclusions are in [COVERAGE.md](docs/COVERAGE.md).
+
+The complete-publication adapter reuses portable `crbk` for rich policy semantics.
+It authenticates the original separate revocations and uses the existing device,
+profile and pin verifier. There is no second Rulebook implementation or unsigned
+settings translation. Global and proof-time evidence absent from current cplc
+credentials remains unavailable and fails closed when required.
