@@ -1087,3 +1087,58 @@ shared_test!(every_field_rule_checks_filterability_before_its_operator, {
         ));
     }
 });
+
+shared_test!(distance_rules_use_wgs84_and_match_in_both_directions, {
+    let schema = schema("garden");
+    for (a, b, minimum, maximum, expected) in [
+        ((0.0, 0.0), (0.0, 0.0), "0", "0", true),
+        ((0.0, 0.0), (0.0, 1.0), "111319", "111320", true),
+        ((0.0, 0.0), (0.0, 1.0), "0", "111319", false),
+        ((0.0, 0.0), (0.0, 1.0), "111320", "120000", false),
+        ((0.0, 179.9), (0.0, -179.9), "22000", "23000", true),
+        ((90.0, 0.0), (90.0, 180.0), "0", "0", true),
+        ((0.0, 0.0), (0.0, 180.0), "20003000", "20004000", true),
+        ((34.095925, -118.2884237), (59.4323439, 24.7341649), "9094718", "9094719", true),
+    ] {
+        let mut first = profile("garden");
+        first.public.insert("place".into(), json!({"latitude":a.0,"longitude":a.1}));
+        let mut second = profile("garden");
+        second.public.insert("place".into(), json!({"latitude":b.0,"longitude":b.1}));
+        let rules = [Rule::DistanceRange {
+            field:"place".into(), min_meters:minimum.into(), max_meters:maximum.into(),
+        }];
+        let first = Participant::new("first", &first, &schema, &rules).unwrap();
+        let second = Participant::new("second", &second, &schema, &rules).unwrap();
+        let result = matches(&first, &second);
+        assert_eq!(result.is_match(), expected);
+        assert_eq!(matches(&second, &first).is_match(), expected);
+        if !expected {
+            assert_eq!(result.failures.len(), 2);
+            assert_eq!(result.failures[0].owner, Some(Side::A));
+            assert_eq!(result.failures[1].owner, Some(Side::B));
+            assert_eq!(result.requester_fields(), ["place"]);
+        }
+    }
+});
+
+shared_test!(distance_rules_refuse_invalid_scope_bounds_and_missing_locations, {
+    let schema = schema("garden");
+    let mut located = profile("garden");
+    located.public.insert("place".into(), json!({"latitude":0,"longitude":0}));
+    for (field, min, max, error) in [
+        ("age", "0", "1", RuleError::Type),
+        ("missing", "0", "1", RuleError::NotFilterable),
+        ("place", "-1", "1", RuleError::Invalid),
+        ("place", "2", "1", RuleError::Invalid),
+        ("place", "invalid", "1", RuleError::Type),
+        ("place", "0", "invalid", RuleError::Type),
+    ] {
+        let rule = Rule::DistanceRange { field:field.into(), min_meters:min.into(), max_meters:max.into() };
+        assert_eq!(Participant::new("first", &located, &schema, &[rule]).err(), Some(error));
+    }
+    let rule = Rule::DistanceRange { field:"place".into(), min_meters:"0".into(), max_meters:"1".into() };
+    assert_eq!(Participant::new("first", &profile("garden"), &schema, &[rule.clone()]).err(), Some(RuleError::Profile));
+    let first = Participant::new("first", &located, &schema, &[rule]).unwrap();
+    let second = Participant::new("second", &profile("garden"), &schema, &[]).unwrap();
+    assert_eq!(matches(&first, &second).failures[0].reason, MatchReason::Missing);
+});

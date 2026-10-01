@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
+use geographiclib_rs::{Geodesic, InverseGeodesic};
 use cshm::{FieldType, PublicProfile, Schema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -26,6 +27,15 @@ pub enum Rule {
         min: String,
         /// Inclusive maximum.
         max: String,
+    },
+    /// Inclusive WGS84 geodesic distance from the owner's value of the same field.
+    DistanceRange {
+        /// Public, filterable location field, also present in the owner's profile.
+        field: String,
+        /// Inclusive minimum distance in meters, as a nonnegative decimal string.
+        min_meters: String,
+        /// Inclusive maximum distance in meters, as a nonnegative decimal string.
+        max_meters: String,
     },
     /// Any of these declared choice identifiers.
     OneOf {
@@ -68,6 +78,7 @@ enum Attribute {
 enum Predicate {
     Equal(String, Attribute),
     Range(String, BigDecimal, BigDecimal),
+    Distance(String, BigDecimal, BigDecimal, BigDecimal, BigDecimal),
     OneOf(String, Vec<String>),
     Block(String),
 }
@@ -126,7 +137,7 @@ impl Participant {
         }
         let rules = rules
             .iter()
-            .map(|rule| compile_rule(rule, schema))
+            .map(|rule| compile_rule(rule, schema, &attributes))
             .collect::<Result<_, _>>()?;
         Ok(Self {
             member: member.into(),
@@ -190,7 +201,11 @@ fn attribute(kind: &FieldType, value: &Value) -> Result<Attribute, RuleError> {
     }
 }
 
-fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
+fn compile_rule(
+    rule: &Rule,
+    schema: &Schema,
+    attributes: &BTreeMap<String, Attribute>,
+) -> Result<Predicate, RuleError> {
     let field = |id: &str| {
         schema
             .public
@@ -219,6 +234,19 @@ fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
                 return Err(RuleError::Invalid);
             }
             Ok(Predicate::Range(id.clone(), min, max))
+        }
+        Rule::DistanceRange { field: id, min_meters, max_meters } => {
+            if !matches!(field(id)?.kind, FieldType::Location) {
+                return Err(RuleError::Type);
+            }
+            let (min, max) = (number(min_meters)?, number(max_meters)?);
+            if min < BigDecimal::from(0) || min > max {
+                return Err(RuleError::Invalid);
+            }
+            let Some(Attribute::Location(latitude, longitude)) = attributes.get(id) else {
+                return Err(RuleError::Profile);
+            };
+            Ok(Predicate::Distance(id.clone(), latitude.clone(), longitude.clone(), min, max))
         }
         Rule::OneOf { field: id, values } => {
             let FieldType::Choice { options } = &field(id)?.kind else {
@@ -356,6 +384,22 @@ fn evaluate_rule<'a>(
         Predicate::Range(field, min, max) => {
             compare_attribute(target, field, &|value| match value {
                 Attribute::Number(n) => (n < min || n > max).then_some(MatchReason::OutsideRange),
+                _ => Some(MatchReason::Different),
+            })
+        }
+        Predicate::Distance(field, latitude, longitude, min, max) => {
+            compare_attribute(target, field, &|value| match value {
+                Attribute::Location(other_latitude, other_longitude) => {
+                    let meters: f64 = Geodesic::wgs84().inverse(
+                        latitude.to_f64().unwrap_or(f64::NAN),
+                        longitude.to_f64().unwrap_or(f64::NAN),
+                        other_latitude.to_f64().unwrap_or(f64::NAN),
+                        other_longitude.to_f64().unwrap_or(f64::NAN),
+                    );
+                    BigDecimal::from_f64(meters).map_or(Some(MatchReason::Different), |distance| {
+                        (distance < *min || distance > *max).then_some(MatchReason::OutsideRange)
+                    })
+                }
                 _ => Some(MatchReason::Different),
             })
         }
