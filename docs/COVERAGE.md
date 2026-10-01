@@ -4,7 +4,9 @@ CI uses cargo-llvm-cov on nightly for upstream Rust branch instrumentation.
 Stable Rust remains the compiler for formatting, Clippy, native and wasm checks.
 The gate requires exactly 100% of LLVM LCOV's emitted production source lines
 and branch records, refusing absent data, duplicate records and zero or unknown
-branch counters. JSON summaries and annotated instantiations remain artifacts.
+branch counters. Every LCOV source record must terminate, include its counters,
+and match the complete source-file set and summaries in the same-run JSON report.
+JSON summaries and annotated instantiations remain artifacts.
 This measures source coverage, not every generic instantiation. LLVM's JSON
 summary can report unexecuted generic copies despite positive merged source
 counters; run36899964639 contains both reports from the same execution.
