@@ -194,3 +194,86 @@ shared_test!(
         );
     }
 );
+
+shared_test!(
+    published_floors_age_and_limits_are_enforced_independently,
+    {
+        for case in 0..10 {
+            let mut f = Fixture::new();
+            let mut settings = settings(action());
+            let mut revocations = revocations();
+            let expected = match case {
+                0..=3 => Refusal::Snapshot,
+                4 => {
+                    f.schema.content.community = "other".into();
+                    Refusal::Snapshot
+                }
+                5 => Refusal::StaleSnapshot,
+                6 => {
+                    revocations["content"]["members"] = json!(
+                        (0..MAX_ITEMS + 1)
+                            .map(|i| format!("m{i}"))
+                            .collect::<Vec<_>>()
+                    );
+                    Refusal::Metadata
+                }
+                7 => {
+                    revocations["content"]["devices"] = json!(
+                        (0..MAX_ITEMS + 1)
+                            .map(|i| {
+                                let mut key = [0; 32];
+                                key[..2].copy_from_slice(&(i as u16).to_be_bytes());
+                                key
+                            })
+                            .collect::<Vec<_>>()
+                    );
+                    Refusal::Metadata
+                }
+                8 => {
+                    f.schema.content.public =
+                        vec![f.schema.content.public[0].clone(); MAX_ITEMS + 1];
+                    Refusal::Metadata
+                }
+                _ => {
+                    settings["policy_epoch"] = json!(3);
+                    Refusal::Snapshot
+                }
+            };
+            let mut signed = f.issue();
+            signed.settings = sign(&mut f.issuer, csgn::Kind::SettingsSnapshot, &settings);
+            let revoked = sign(
+                &mut f.issuer,
+                csgn::Kind::RevocationListSnapshot,
+                &revocations,
+            );
+            let mut policy = PublishedPolicy {
+                policy: signed.policy(),
+                revocations: &revoked,
+                minimum_revocations_revision: 1,
+                action: "admission",
+            };
+            match case {
+                0 => policy.policy.minimum_settings_revision = 2,
+                1 => policy.policy.minimum_schema_revision = 2,
+                2 => policy.minimum_revocations_revision = 2,
+                3 => policy.policy.minimum_epoch = 3,
+                5 => policy.policy.maximum_snapshot_age = 1,
+                _ => (),
+            }
+            refused(
+                check_published(&signed.bundle, &policy, &signed.schema),
+                expected,
+            );
+        }
+        for expiry in [NOW, u64::MAX] {
+            let mut f = Fixture::new();
+            f.credential.gates[0].valid_until = expiry;
+            let mut policy = action();
+            policy["all_of"] = json!([requirement("voucher")]);
+            refused(
+                check_fixture(&mut f, &settings(policy), &revocations()),
+                Refusal::Gate,
+            );
+        }
+    }
+);

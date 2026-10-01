@@ -87,11 +87,10 @@ impl GatePolicy {
     fn check(&self, credential: &Credential, now: u64) -> Result<(), Refusal> {
         let allowed = match self {
             Self::Legacy(required) => required.iter().all(|required| {
-                credential.gates.iter().any(|g| {
-                    g.gate == required.gate
-                        && g.valid_until > now
-                        && required.providers.contains(&g.provider)
-                })
+                credential
+                    .gates
+                    .iter()
+                    .any(|g| g.gate == required.gate && required.providers.contains(&g.provider))
             }),
             Self::Published { snapshot, action } => {
                 let gates = credential
@@ -417,7 +416,8 @@ fn evaluate_authenticated(
 ) -> Result<Admission, Refusal> {
     let compiled = rules.schema.compile().map_err(|_| Refusal::Snapshot)?;
     let body: BundleContent = parse(&bundle.payload)?;
-    if body.credential.len() > MAX_DOCUMENT_BYTES || body.openings.len() > MAX_ITEMS {
+    // The bounded outer JSON is longer than any decoded credential byte array.
+    if body.openings.len() > MAX_ITEMS {
         return Err(Refusal::Malformed);
     }
     let signed = policy

@@ -125,3 +125,7 @@ It authenticates the original separate revocations and uses the existing device,
 profile and pin verifier. There is no second Rulebook implementation or unsigned
 settings translation. Global and proof-time evidence absent from current cplc
 credentials remains unavailable and fails closed when required.
+
+Storage fault tests use the maintained upstream libsql engine to inject damaged
+on-disk rows and ignored writes in temporary databases. Production storage stays
+behind crlt's table/index-only migration and scoped-query boundary.

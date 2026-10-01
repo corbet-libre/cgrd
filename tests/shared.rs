@@ -823,3 +823,168 @@ shared_test!(
         }
     }
 );
+
+shared_test!(every_legacy_metadata_limit_and_identifier_is_enforced, {
+    for case in 0..12 {
+        let mut f = Fixture::new();
+        let settings = &mut f.settings.content;
+        match case {
+            0 => settings.required_gates = vec![settings.required_gates[0].clone(); MAX_ITEMS + 1],
+            1 => settings.revoked_members = vec!["member".into(); MAX_ITEMS + 1],
+            2 => settings.revoked_devices = vec![[1; 32]; MAX_ITEMS + 1],
+            3 => settings.reserved_handles = vec!["reserved".into(); MAX_ITEMS + 1],
+            4 => settings
+                .required_gates
+                .push(settings.required_gates[0].clone()),
+            5 => settings.required_gates[0].gate.clear(),
+            6 => settings.required_gates[0].providers = vec!["provider".into(); MAX_ITEMS + 1],
+            7 => settings.required_gates[0].providers = vec!["provider".into(); 2],
+            8 => settings.required_gates[0].providers = vec!["bad\nprovider".into()],
+            9 => settings.revoked_members = vec!["x".repeat(257)],
+            10 => settings.revoked_members = vec!["duplicate".into(); 2],
+            _ => settings.revoked_devices = vec![[1; 32]; 2],
+        }
+        refused(f.issue().check(), Refusal::Metadata);
+    }
+    for case in 0..7 {
+        let mut f = Fixture::new();
+        match case {
+            0 => f.credential.devices.clear(),
+            1 => f.credential.devices = vec![[1; 32]; MAX_ITEMS + 1],
+            2 => f.credential.pins = vec![f.credential.pins[0].clone(); MAX_ITEMS + 1],
+            3 => f.credential.gates = vec![f.credential.gates[0].clone(); MAX_ITEMS + 1],
+            4 => f.credential.gates[0].gate.clear(),
+            5 => f.credential.gates[0].provider.clear(),
+            _ => f.credential.gates[0].provider = "x".repeat(257),
+        }
+        refused(f.issue().check(), Refusal::Metadata);
+    }
+    let mut f = Fixture::new();
+    f.body.openings = vec![f.body.openings[0].clone(); MAX_ITEMS + 1];
+    refused(f.issue().check(), Refusal::Malformed);
+    let mut f = Fixture::new();
+    f.body.openings[0].salt = vec![1; 1025];
+    refused(f.issue().check(), Refusal::Pin);
+    let mut f = Fixture::new();
+    f.credential.community = "other".into();
+    refused(f.issue().check(), Refusal::Subject);
+    let mut f = Fixture::new();
+    f.credential.member = "bad\nmember".into();
+    f.body.member = f.credential.member.clone();
+    refused(f.issue().check(), Refusal::Subject);
+    let mut f = Fixture::new();
+    f.schema.content.public = vec![f.schema.content.public[0].clone(); MAX_ITEMS + 1];
+    refused(f.issue().check(), Refusal::Metadata);
+});
+
+shared_test!(schema_age_and_reserved_script_boundaries_are_checked, {
+    let mut f = Fixture::new();
+    let mut signed = f.issue();
+    signed.settings = f
+        .issuer
+        .sign(
+            csgn::Kind::SettingsSnapshot,
+            &serde_json::to_vec(&f.settings).unwrap(),
+            NOW,
+            EXPIRY,
+        )
+        .unwrap();
+    let mut policy = signed.policy();
+    policy.maximum_snapshot_age = 50;
+    refused(
+        check(&signed.bundle, &policy, &signed.schema),
+        Refusal::StaleSnapshot,
+    );
+    assert!(
+        check_handle("ひらがなカタカナ漢字", &[])
+            .unwrap_err()
+            .contains(&HandleReason::MixedScript)
+    );
+    assert!(
+        check_handle("mountain", &["x".repeat(4097)])
+            .unwrap_err()
+            .contains(&HandleReason::InvalidReserved)
+    );
+});
+
+shared_test!(matching_rejects_limits_and_malformed_rule_values, {
+    let schema = schema("garden");
+    let profile = profile("garden");
+    let refused = |s: &cshm::Schema, p: &cshm::PublicProfile, rules: &[Rule]| {
+        assert!(Participant::new("member", p, s, rules).is_err());
+    };
+    let mut excessive = schema.clone();
+    excessive.public = vec![excessive.public[0].clone(); MAX_ITEMS + 1];
+    refused(&excessive, &profile, &[]);
+    let mut large = schema.clone();
+    large.public[0].label = "x".repeat(MAX_DOCUMENT_BYTES);
+    refused(&large, &profile, &[]);
+    assert!(Participant::new("", &profile, &schema, &[]).is_err());
+    for (field, value) in [
+        ("age", json!(18.5)),
+        ("hobby", json!("unknown")),
+        ("yes", json!("false")),
+        ("text", json!(false)),
+        ("place", json!({"latitude":0})),
+        ("place", json!({"latitude":91,"longitude":0})),
+        ("place", json!({"latitude":0,"longitude":181})),
+        ("place", json!({"wrong":0,"longitude":0})),
+        ("place", json!({"latitude":0,"wrong":0})),
+    ] {
+        refused(
+            &schema,
+            &profile,
+            &[Rule::Equal {
+                field: field.into(),
+                value,
+            }],
+        );
+    }
+    refused(
+        &schema,
+        &profile,
+        &[Rule::OneOf {
+            field: "age".into(),
+            values: vec!["18".into()],
+        }],
+    );
+    refused(
+        &schema,
+        &profile,
+        &[Rule::OneOf {
+            field: "hobby".into(),
+            values: vec!["hiking".into(); MAX_ITEMS + 1],
+        }],
+    );
+});
+
+shared_test!(snapshot_storage_refuses_signed_invalid_metadata, {
+    use cgrd::storage::{SnapshotKind, SnapshotRecord};
+    let mut f = Fixture::new();
+    f.settings.content.required_gates[0].providers.clear();
+    let s = f.issue();
+    assert!(
+        SnapshotRecord::verify("garden", &s.keys, SnapshotKind::Settings, &s.settings, NOW)
+            .is_err()
+    );
+    for case in 0..4 {
+        let mut f = Fixture::new();
+        match case {
+            0 => f.schema.content.community = "other".into(),
+            1 => f.schema.content.public = vec![f.schema.content.public[0].clone(); MAX_ITEMS + 1],
+            2 => f.schema.revision = u64::MAX,
+            _ => f.schema.policy_epoch = u64::MAX,
+        }
+        let s = f.issue();
+        assert!(
+            SnapshotRecord::verify("garden", &s.keys, SnapshotKind::Schema, &s.schema, NOW)
+                .is_err()
+        );
+    }
+});
+
+shared_test!(legacy_required_gate_cannot_be_replaced_by_another_gate, {
+    let mut f = Fixture::new();
+    f.credential.gates[0].gate = "other".into();
+    refused(f.issue().check(), Refusal::Gate);
+});

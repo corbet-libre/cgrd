@@ -249,3 +249,63 @@ async fn turso_round_trip_when_both_credentials_are_present() {
     store.check_query_plans().await.unwrap();
     contract(&store, &community).await;
 }
+
+#[tokio::test]
+async fn corrupted_database_rows_and_ignored_writes_fail_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(Config::new(
+        format!("file://{}", dir.path().join("damaged.db").display()),
+        "",
+    ))
+    .await
+    .unwrap();
+    assert!(LibsqlStore::new(&db, "bad\ncommunity").is_err());
+    // A real database with a damaged/older schema; readers must still enforce
+    // the signed record limits instead of trusting SQLite column declarations.
+    let schema = SCHEMA
+        .replace(" CHECK (revision > 0)", "")
+        .replace(" CHECK (policy_epoch >= 0)", "");
+    db.migrate(&[Migration::new(1, "damaged schema", &schema)])
+        .await
+        .unwrap();
+    for (name, revision, epoch, cose) in [
+        ("zero", 0, 0, vec![1]),
+        ("negative", 1, -1, vec![1]),
+        ("large", 1, 0, vec![1; cgrd::MAX_DOCUMENT_BYTES + 1]),
+    ] {
+        db.community(name).unwrap().execute("INSERT INTO cgrd_snapshots (kind, revision, policy_epoch, cose) VALUES (?1, ?2, ?3, ?4)",crlt::params!["settings",revision as i64,epoch as i64,cose]).await.unwrap();
+        assert_eq!(
+            LibsqlStore::new(&db, name)
+                .unwrap()
+                .load(SnapshotKind::Settings)
+                .await,
+            Err(StorageError::Invalid)
+        );
+    }
+    db.community("text").unwrap().execute("INSERT INTO cgrd_snapshots (kind, revision, policy_epoch, cose) VALUES (?1, ?2, ?3, ?4)",crlt::params!["settings",1i64,0i64,"not a blob"]).await.unwrap();
+    assert_eq!(
+        LibsqlStore::new(&db, "text")
+            .unwrap()
+            .load(SnapshotKind::Settings)
+            .await,
+        Err(StorageError::Invalid)
+    );
+    // crlt correctly rejects trigger migrations. Inject on-disk corruption
+    // through the real upstream engine, then exercise Guard through crlt.
+    let raw = libsql::Builder::new_local(dir.path().join("damaged.db"))
+        .build()
+        .await
+        .unwrap();
+    raw.connect()
+        .unwrap()
+        .execute_batch("CREATE TRIGGER refuse_snapshot BEFORE INSERT ON cgrd_snapshots BEGIN SELECT RAISE(IGNORE); END;")
+        .await
+        .unwrap();
+    assert_eq!(
+        LibsqlStore::new(&db, "ignored")
+            .unwrap()
+            .save(&record("ignored", 1, 1))
+            .await,
+        Err(StorageError::Conflict)
+    );
+}

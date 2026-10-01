@@ -36,6 +36,7 @@ csgn = { git = "https://github.com/corbet-foss/csgn", branch = "main", features 
 coset = "0.4.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+libsql = { version = "0.9", default-features = false, features = ["core"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 
