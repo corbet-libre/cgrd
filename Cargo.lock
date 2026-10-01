@@ -290,6 +290,7 @@ dependencies = [
  "csgn",
  "cshm",
  "ed25519-dalek",
+ "libsql",
  "precis-profiles",
  "rustrict",
  "serde",
@@ -424,7 +425,7 @@ dependencies = [
 [[package]]
 name = "crbk"
 version = "0.0.0"
-source = "git+https://github.com/corbet-foss/crbk?branch=main#0b2ee6555fda95ff5250334abf409e4d3cba0372"
+source = "git+https://github.com/corbet-foss/crbk?branch=main#ee4f73334818e2053c7df3d123a8e3b8cc23b2cf"
 dependencies = [
  "serde",
  "serde_json",

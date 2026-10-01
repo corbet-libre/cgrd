@@ -101,7 +101,7 @@ impl Participant {
         profile: &PublicProfile,
         schema: &Schema,
         rules: &[Rule],
-        contact: &impl Fn(&str) -> cshm::ContactCheck,
+        contact: &dyn Fn(&str) -> cshm::ContactCheck,
     ) -> Result<Self, RuleError> {
         if rules.len() > MAX_ITEMS
             || schema.public.len() + schema.private.len() > MAX_ITEMS
@@ -114,7 +114,7 @@ impl Participant {
         }
         let compiled = schema.compile().map_err(|_| RuleError::Profile)?;
         if !crate::guard::identifier(member)
-            || !compiled.validate_public_with(profile, contact).is_valid()
+            || !compiled.validate_public_with(profile, &contact).is_valid()
         {
             return Err(RuleError::Profile);
         }
@@ -191,30 +191,25 @@ fn attribute(kind: &FieldType, value: &Value) -> Result<Attribute, RuleError> {
 }
 
 fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
-    let id = match rule {
-        Rule::Equal { field, .. } | Rule::NumberRange { field, .. } | Rule::OneOf { field, .. } => {
-            field
-        }
-        Rule::Block { member } => {
-            return if crate::guard::identifier(member) {
-                Ok(Predicate::Block(member.clone()))
-            } else {
-                Err(RuleError::Invalid)
-            };
-        }
+    let field = |id: &str| {
+        schema
+            .public
+            .iter()
+            .find(|f| f.id == id && f.filterable)
+            .ok_or(RuleError::NotFilterable)
     };
-    let field = schema
-        .public
-        .iter()
-        .find(|f| f.id == *id && f.filterable)
-        .ok_or(RuleError::NotFilterable)?;
     match rule {
-        Rule::Equal { value, .. } => {
-            Ok(Predicate::Equal(id.clone(), attribute(&field.kind, value)?))
-        }
-        Rule::NumberRange { min, max, .. } => {
+        Rule::Equal { field: id, value } => Ok(Predicate::Equal(
+            id.clone(),
+            attribute(&field(id)?.kind, value)?,
+        )),
+        Rule::NumberRange {
+            field: id,
+            min,
+            max,
+        } => {
             if !matches!(
-                field.kind,
+                field(id)?.kind,
                 FieldType::Integer { .. } | FieldType::Decimal { .. }
             ) {
                 return Err(RuleError::Type);
@@ -225,8 +220,8 @@ fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
             }
             Ok(Predicate::Range(id.clone(), min, max))
         }
-        Rule::OneOf { values, .. } => {
-            let FieldType::Choice { options } = &field.kind else {
+        Rule::OneOf { field: id, values } => {
+            let FieldType::Choice { options } = &field(id)?.kind else {
                 return Err(RuleError::Type);
             };
             if values.is_empty() || values.len() > MAX_ITEMS {
@@ -237,7 +232,13 @@ fn compile_rule(rule: &Rule, schema: &Schema) -> Result<Predicate, RuleError> {
             }
             Ok(Predicate::OneOf(id.clone(), values.clone()))
         }
-        Rule::Block { .. } => unreachable!("handled above"),
+        Rule::Block { member } => {
+            if crate::guard::identifier(member) {
+                Ok(Predicate::Block(member.clone()))
+            } else {
+                Err(RuleError::Invalid)
+            }
+        }
     }
 }
 
@@ -348,31 +349,39 @@ fn evaluate_rule<'a>(
     rule: &'a Predicate,
     target: &Participant,
 ) -> (Option<&'a String>, Option<MatchReason>) {
-    let field = match rule {
-        Predicate::Equal(field, _) | Predicate::Range(field, _, _) | Predicate::OneOf(field, _) => {
-            field
+    match rule {
+        Predicate::Equal(field, expected) => compare_attribute(target, field, &|value| {
+            (value != expected).then_some(MatchReason::Different)
+        }),
+        Predicate::Range(field, min, max) => {
+            compare_attribute(target, field, &|value| match value {
+                Attribute::Number(n) => (n < min || n > max).then_some(MatchReason::OutsideRange),
+                _ => Some(MatchReason::Different),
+            })
         }
-        Predicate::Block(member) => {
-            return (
-                None,
-                (member == &target.member).then_some(MatchReason::Blocked),
-            );
-        }
-    };
-    let Some(value) = target.attributes.get(field) else {
-        return (Some(field), Some(MatchReason::Missing));
-    };
-    let reason = match rule {
-        Predicate::Equal(_, expected) => (value != expected).then_some(MatchReason::Different),
-        Predicate::Range(_, min, max) => match value {
-            Attribute::Number(n) => (n < min || n > max).then_some(MatchReason::OutsideRange),
-            _ => Some(MatchReason::Different),
-        },
-        Predicate::OneOf(_, values) => match value {
+        Predicate::OneOf(field, values) => compare_attribute(target, field, &|value| match value {
             Attribute::Text(text) => (!values.contains(text)).then_some(MatchReason::Different),
             _ => Some(MatchReason::Different),
-        },
-        Predicate::Block(_) => unreachable!("handled above"),
-    };
+        }),
+        Predicate::Block(member) => (
+            None,
+            (member == &target.member).then_some(MatchReason::Blocked),
+        ),
+    }
+}
+
+fn compare_attribute<'a>(
+    target: &Participant,
+    field: &'a String,
+    compare: &dyn Fn(&Attribute) -> Option<MatchReason>,
+) -> (Option<&'a String>, Option<MatchReason>) {
+    let reason = target
+        .attributes
+        .get(field)
+        .map_or(Some(MatchReason::Missing), compare);
     (Some(field), reason)
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/matching.rs"]
+mod unit_tests;

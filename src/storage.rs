@@ -197,3 +197,7 @@ impl Store for MemoryStore {
         Ok(())
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "../tests/unit/storage.rs"]
+mod unit_tests;

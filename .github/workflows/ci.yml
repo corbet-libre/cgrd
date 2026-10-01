@@ -85,7 +85,7 @@ jobs:
       - name: Execute shared wasm vectors
         env:
           CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-        run: cargo test --locked --target wasm32-unknown-unknown --no-default-features --test shared --test published
+        run: cargo test --locked --target wasm32-unknown-unknown --no-default-features --lib --test shared --test published
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0
         with:
           tool: cargo-deny

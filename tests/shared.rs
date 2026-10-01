@@ -988,3 +988,81 @@ shared_test!(legacy_required_gate_cannot_be_replaced_by_another_gate, {
     f.credential.gates[0].gate = "other".into();
     refused(f.issue().check(), Refusal::Gate);
 });
+
+shared_test!(
+    matching_refuses_unavailable_contact_checks_and_invalid_definitions,
+    {
+        let mut definition = schema("garden");
+        let mut public = profile("garden");
+        public.public.insert("bio".into(), json!("Hello"));
+        definition.public[2].no_contact_details = true;
+        assert!(matches!(
+            Participant::new("member", &public, &definition, &[]),
+            Err(RuleError::Profile)
+        ));
+        assert!(
+            Participant::with_contact("member", &public, &definition, &[], &|_| {
+                cshm::ContactCheck::Clear
+            })
+            .is_ok()
+        );
+        definition.version = 0;
+        assert!(matches!(
+            Participant::new("member", &public, &definition, &[]),
+            Err(RuleError::Profile)
+        ));
+    }
+);
+
+shared_test!(
+    matching_rejects_malformed_choice_location_and_range_bounds,
+    {
+        let definition = schema("garden");
+        let public = profile("garden");
+        for rule in [
+            Rule::Equal {
+                field: "hobby".into(),
+                value: json!(4),
+            },
+            Rule::Equal {
+                field: "place".into(),
+                value: json!(false),
+            },
+            Rule::Equal {
+                field: "place".into(),
+                value: json!({"latitude": "bad", "longitude": 0}),
+            },
+            Rule::Equal {
+                field: "place".into(),
+                value: json!({"latitude": 0, "longitude": "bad"}),
+            },
+            Rule::NumberRange {
+                field: "age".into(),
+                min: "0".into(),
+                max: "bad".into(),
+            },
+        ] {
+            assert!(matches!(
+                Participant::new("member", &public, &definition, &[rule]),
+                Err(RuleError::Type)
+            ));
+        }
+    }
+);
+
+shared_test!(snapshot_storage_refuses_signed_invalid_schema_definition, {
+    use cgrd::storage::{SnapshotKind, SnapshotRecord, StorageError};
+    let mut fixture = Fixture::new();
+    fixture.schema.content.version = 0;
+    let signed = fixture.issue();
+    assert!(matches!(
+        SnapshotRecord::verify(
+            "garden",
+            &signed.keys,
+            SnapshotKind::Schema,
+            &signed.schema,
+            NOW
+        ),
+        Err(StorageError::Invalid)
+    ));
+});

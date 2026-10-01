@@ -4,7 +4,8 @@ Stateless admission, reciprocal profile matching and handle checks for `cvld`.
 Native Rust and `wasm32-unknown-unknown` share the same evaluation code. The
 interface is experimental and is not published to a registry.
 
-- `check(bundle, policy, schema)` verifies signed snapshots, a COSE community
+- `check_published` verifies the full signed Rulebook policy and separate revocations.
+- `check(bundle, policy, schema)` verifies legacy signed settings, a COSE community
   credential, the authorized device's signature, cshm validation and cpns pins.
 - `Participant::new(...)` validates public attributes and compiles personal
   rules; `matches(a, b)` checks both directions with structured reasons.
@@ -37,35 +38,24 @@ Surveyed crates.io metadata and upstream GitHub sources on 2026-09-30:
 | [cel-interpreter 0.10](https://github.com/cel-rust/cel-rust), [cedar-policy 4.13](https://github.com/cedar-policy/cedar) | Considered; general expression/authorization languages add semantics and capabilities this bounded, typed matching contract does not need. Keep a small conjunction dispatcher, delegate validation to cshm and exact numeric comparisons to BigDecimal. |
 | [bigdecimal 0.4](https://github.com/akubera/bigdecimal-rs) | Exact decimal/scientific-notation comparisons, without platform-dependent binary floating point. Bound input length and exponent before comparison. |
 
-All sibling dependencies use full `rev` pins, checked against GitHub main with
-`git ls-remote` on 2026-09-30:
+First-party dependencies follow main and resolve to one full revision per crate
+in the shared CI lock snapshot. Portable crbk supplies the complete admission
+policy evaluator; csgn authenticates issuer documents, cshm validates profiles,
+and cpns verifies bound pins. No cpsd or FSL dependency enters this leaf.
 
-| Leaf | Revision | Reason |
-|---|---|---|
-| csgn | `d7203f310c3c129c3f67ef4ef3e34ccf0ae8c93b` | Canonical COSE framing and authenticated verification policy. Enable `volatile-signer` only for deterministic test fixtures. |
-| cpns | `23968a9fa338791e70078c6070a6f1f3cf185ff7` | v2 fingerprints bind community, member and field; no v1 fallback. |
-| crlt | `6b94dacd7fa04aa8847c62c6471a1fc5c0f6c9dc` | Current shared database API; matches the optional pins in csgn and cpns. |
-| cshm | `d136d2dbaceddfa0a19158d8f3a685a84abd06e7` | Current schema validation API. |
-
-cgrd has no crbk or cpsd dependency. Resolved settings and reserved handles
-arrive through signed snapshots. No additional leaf or local replacement trait
-is needed for this alignment.
-
-The external crates above are MIT and/or Apache-2.0. The four sibling crates
-use LGPL-3.0-only WITH LGPL-3.0-linking-exception. Serde/serde_json and thiserror
-provide wire decoding and typed errors. Tokio, tempfile and wasm-bindgen-test
-are test dependencies. Unicode/profanity releases are pinned because their
-tables affect verdicts; the committed Cargo.lock pins transitive tables too.
-Consumers must coordinate dependency updates across native and wasm builds.
+Serde/serde_json and thiserror provide wire decoding and typed errors. Tokio,
+tempfile, upstream libsql and wasm-bindgen-test support real integration tests.
+Unicode/profanity dependencies use compatible version ranges; the committed and
+CI-resolved lock snapshots keep each tested dependency graph reproducible.
+Consumers must coordinate verdict-affecting updates across native and wasm.
 
 ## Validation and storage
 
 GitHub Actions runs formatting, warning-free Clippy, native tests, the wasm
 build check, and the **same** integration tests under Node's wasm runtime.
-The metadata check rejects floating or duplicated corbet-foss leaf revisions,
-including transitive dependencies, and checks resolved commits against full
-manifest `rev` pins. Live branch heads are checked when updating dependencies,
-not during reproducible CI runs.
+The metadata check requires first-party main declarations and rejects duplicate
+resolved revisions throughout the graph. CI refreshes one coherent lock before
+all substantive jobs; every job downloads and uses that exact snapshot.
 No Cargo commands run on the workstation. CI retains its resolved lockfile;
 no credentials are supplied to public CI.
 

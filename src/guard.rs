@@ -50,7 +50,7 @@ pub fn check_published_with_contact(
     bundle: &Bundle,
     policy: &PublishedPolicy<'_>,
     schema: &[u8],
-    contact: &impl Fn(&str) -> cshm::ContactCheck,
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Admission {
     match evaluate_published(bundle, policy, schema, contact) {
         Ok(admission) => admission,
@@ -132,7 +132,7 @@ fn evaluate_published(
     bundle: &Bundle,
     published: &PublishedPolicy<'_>,
     schema_bytes: &[u8],
-    contact: &impl Fn(&str) -> cshm::ContactCheck,
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Result<Admission, Refusal> {
     let policy = &published.policy;
     let (settings, settings_issued) = snapshot::<crbk::Values>(
@@ -293,7 +293,7 @@ pub fn check_with_contact(
     bundle: &Bundle,
     policy: &Policy<'_>,
     schema: &[u8],
-    contact: &impl Fn(&str) -> cshm::ContactCheck,
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Admission {
     match evaluate(bundle, policy, schema, contact) {
         Ok(admission) => admission,
@@ -361,7 +361,7 @@ fn evaluate(
     bundle: &Bundle,
     policy: &Policy<'_>,
     schema_bytes: &[u8],
-    contact: &impl Fn(&str) -> cshm::ContactCheck,
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Result<Admission, Refusal> {
     let (settings, settings_issued) = snapshot::<Settings>(
         policy.settings,
@@ -412,7 +412,7 @@ fn evaluate_authenticated(
     bundle: &Bundle,
     policy: &Policy<'_>,
     rules: &VerifiedRules,
-    contact: &impl Fn(&str) -> cshm::ContactCheck,
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Result<Admission, Refusal> {
     let compiled = rules.schema.compile().map_err(|_| Refusal::Snapshot)?;
     let body: BundleContent = parse(&bundle.payload)?;
@@ -475,8 +475,8 @@ fn evaluate_authenticated(
         return Err(Refusal::Handle);
     }
     let report = match &body.profile {
-        Profile::Public(p) => compiled.validate_public_with(p, contact),
-        Profile::Full(p) => compiled.validate_profile_with(p, contact),
+        Profile::Public(p) => compiled.validate_public_with(p, &contact),
+        Profile::Full(p) => compiled.validate_profile_with(p, &contact),
     };
     if !report.is_valid() {
         return Err(Refusal::Profile(report.violations));
