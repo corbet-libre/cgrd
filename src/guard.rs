@@ -60,11 +60,86 @@ pub fn check_published_with_contact(
     }
 }
 
+/// Original signed bundle that passed the complete current person/profile gate
+/// and contains an explicitly signed HPKE recipient key. No public constructor,
+/// deserializer or accepting conversion from the diagnostic Admission enum exists.
+/// This is not a G3/session verdict or an Exchange consent decision.
+pub struct VerifiedRecipient<'a> {
+    bundle: &'a Bundle,
+    community: String,
+    member: String,
+    device: [u8; 32],
+    hpke_key: [u8; 32],
+    checked_at: u64,
+}
+impl VerifiedRecipient<'_> {
+    /// Authenticated community namespace.
+    pub fn community(&self) -> &str {
+        &self.community
+    }
+    /// Authenticated community pseudonym.
+    pub fn member(&self) -> &str {
+        &self.member
+    }
+    /// Original authorized device that signed the entire public key binding.
+    pub fn device(&self) -> &[u8; 32] {
+        &self.device
+    }
+    /// Original explicitly signed X25519 key. Envelope selects the maintained
+    /// manager-approved RFC9180 suite and performs its own cryptographic checks.
+    pub fn hpke_key(&self) -> &[u8; 32] {
+        &self.hpke_key
+    }
+    /// Exact original Guard evaluation time. Reverify with CURRENT publications
+    /// after an authority/network await; no independent TTL is invented here.
+    pub fn checked_at(&self) -> u64 {
+        self.checked_at
+    }
+    /// Exact signed bytes, retained by borrow for publication/transcript binding.
+    pub fn bundle(&self) -> &Bundle {
+        self.bundle
+    }
+}
+
+/// Run the complete original gate and retain a nonforgeable recipient projection.
+/// The caller supplies trusted current Policy, schema and contact detector; peer
+/// input cannot choose the trust root, policy action, time or expected member.
+pub fn verify_recipient_with_contact<'a>(
+    bundle: &'a Bundle,
+    expected_member: &str,
+    policy: &PublishedPolicy<'_>,
+    schema: &[u8],
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
+) -> Result<VerifiedRecipient<'a>, Refusal> {
+    // Do not accept the public diagnostic Admission enum as a capability.
+    evaluate_published(bundle, policy, schema, contact)?;
+    let body: BundleContent = parse(&bundle.payload)?;
+    if body.member != expected_member {
+        return Err(Refusal::Subject);
+    }
+    let hpke_key = body
+        .hpke_key
+        .filter(|key| *key != [0; 32])
+        .ok_or(Refusal::Binding)?;
+    Ok(VerifiedRecipient {
+        bundle,
+        community: body.community,
+        member: body.member,
+        device: body.device,
+        hpke_key,
+        checked_at: policy.policy.now,
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Revocations {
     members: BTreeSet<String>,
     devices: BTreeSet<[u8; 32]>,
+    // Policy's original passkey projection is carried in this snapshot. G3
+    // consumes it through Charter; Guard continues its person/profile decision.
+    #[serde(default)]
+    passkeys: BTreeSet<Vec<u8>>,
 }
 
 struct VerifiedRules {
@@ -87,10 +162,11 @@ impl GatePolicy {
     fn check(&self, credential: &Credential, now: u64) -> Result<(), Refusal> {
         let allowed = match self {
             Self::Legacy(required) => required.iter().all(|required| {
-                credential
-                    .gates
-                    .iter()
-                    .any(|g| g.gate == required.gate && required.providers.contains(&g.provider))
+                credential.gates.iter().any(|g| {
+                    g.gate == required.gate
+                        && g.valid_until > now
+                        && required.providers.contains(&g.provider)
+                })
             }),
             Self::Published { snapshot, action } => {
                 let gates = credential
@@ -174,6 +250,11 @@ fn evaluate_published(
     }
     if revocations.content.members.len() > MAX_ITEMS
         || revocations.content.devices.len() > MAX_ITEMS
+        || revocations
+            .content
+            .passkeys
+            .iter()
+            .any(|id| id.is_empty() || id.len() > 1024)
         || revocations
             .content
             .members
@@ -417,6 +498,7 @@ fn evaluate(
         revocations: Revocations {
             members: settings.content.revoked_members.into_iter().collect(),
             devices: settings.content.revoked_devices.into_iter().collect(),
+            passkeys: BTreeSet::new(),
         },
         reserved_handles: settings.content.reserved_handles,
         gates: GatePolicy::Legacy(settings.content.required_gates),

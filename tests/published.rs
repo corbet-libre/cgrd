@@ -277,3 +277,76 @@ shared_test!(
         }
     }
 );
+
+shared_test!(
+    passkey_revocation_projection_preserves_person_profile_checks,
+    {
+        let mut f = Fixture::new();
+        let mut revoked = revocations();
+        revoked["content"]["passkeys"] = json!([vec![9; 64]]);
+        // Guard still checks the person/profile. Passkey possession and lineage are
+        // separate G3 obligations; this signed projection is not a shortcut for them.
+        assert!(check_fixture(&mut f, &settings(action()), &revoked).is_admitted());
+        for invalid in [Vec::new(), vec![9; 1025]] {
+            revoked["content"]["passkeys"] = json!([invalid]);
+            assert!(
+                matches!(check_fixture(&mut f, &settings(action()), &revoked),
+            Admission::Refused { reasons } if reasons == vec![Refusal::Metadata])
+            );
+        }
+    }
+);
+
+shared_test!(
+    recipient_capability_requires_complete_gate_and_explicit_signed_key,
+    {
+        for case in 0..6 {
+            let mut f = Fixture::new();
+            f.body.hpke_key = match case {
+                1 => None,
+                2 => Some([0; 32]),
+                _ => Some([9; 32]),
+            };
+            let mut signed = f.issue();
+            signed.settings = sign(
+                &mut f.issuer,
+                csgn::Kind::SettingsSnapshot,
+                &settings(action()),
+            );
+            let mut revoked = revocations();
+            if case == 5 {
+                revoked["content"]["devices"] = json!([f.body.device]);
+            }
+            let revoked = sign(&mut f.issuer, csgn::Kind::RevocationListSnapshot, &revoked);
+            if case == 4 {
+                let mut changed: Value = serde_json::from_slice(&signed.bundle.payload).unwrap();
+                changed["hpke_key"] = json!(vec![8; 32]);
+                signed.bundle.payload = serde_json::to_vec(&changed).unwrap();
+            }
+            let policy = PublishedPolicy {
+                policy: signed.policy(),
+                revocations: &revoked,
+                minimum_revocations_revision: 1,
+                action: "admission",
+            };
+            let result = verify_recipient_with_contact(
+                &signed.bundle,
+                if case == 3 { "mallory" } else { "alice" },
+                &policy,
+                &signed.schema,
+                &|_| cshm::ContactCheck::Unavailable,
+            );
+            if case == 0 {
+                let recipient = result.unwrap();
+                assert_eq!(recipient.community(), "garden");
+                assert_eq!(recipient.member(), "alice");
+                assert_eq!(recipient.device(), &f.body.device);
+                assert_eq!(recipient.hpke_key(), &[9; 32]);
+                assert_eq!(recipient.checked_at(), policy.policy.now);
+                assert!(std::ptr::eq(recipient.bundle(), &signed.bundle));
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+);

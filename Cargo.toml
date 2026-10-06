@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Guard: stateless person-and-profile checks, rule engine and handle checks that run everywhere"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
-repository = "https://github.com/corbet-foss/cgrd"
+repository = "https://git.corbet.ch/corbet-foss/cgrd.git"
 readme = "README.md"
 publish = false
 include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
@@ -15,10 +15,10 @@ default = ["storage"]
 storage = ["dep:crlt"]
 
 [dependencies]
-crbk = { git = "https://github.com/corbet-foss/crbk", branch = "main", default-features = false }
-csgn = { git = "https://github.com/corbet-foss/csgn", branch = "main", default-features = false }
-cshm = { git = "https://github.com/corbet-foss/cshm", branch = "main" }
-cpns = { git = "https://github.com/corbet-foss/cpns", branch = "main", default-features = false }
+crbk = { git = "https://git.corbet.ch/corbet-foss/crbk.git", branch = "v01", default-features = false }
+csgn = { git = "https://git.corbet.ch/corbet-foss/csgn.git", branch = "v01", default-features = false }
+cshm = { git = "https://git.corbet.ch/corbet-foss/cshm.git", branch = "v01" }
+cpns = { git = "https://git.corbet.ch/corbet-foss/cpns.git", branch = "v01", default-features = false }
 ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
 precis-profiles = "0.2.0"
 unicode-security = "0.1.2"
@@ -30,10 +30,10 @@ bigdecimal = "0.4.11"
 geographiclib-rs = { version = "0.2", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-crlt = { git = "https://github.com/corbet-foss/crlt", branch = "main", optional = true }
+crlt = { git = "https://git.corbet.ch/corbet-foss/crlt.git", branch = "v01", optional = true }
 
 [dev-dependencies]
-csgn = { git = "https://github.com/corbet-foss/csgn", branch = "main", features = ["volatile-signer"] }
+csgn = { git = "https://git.corbet.ch/corbet-foss/csgn.git", branch = "v01", features = ["volatile-signer"] }
 coset = "0.4.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
