@@ -406,7 +406,7 @@ dependencies = [
 [[package]]
 name = "cpns"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/cpns?branch=main#85674ab2e70f11051ba30ab44a8c7d3301ac6ec1"
+source = "git+https://git.corbet.ch/corbet-foss/cpns?branch=main#eb041a636b4675570af9617d6b59978f50cd82fb"
 dependencies = [
  "getrandom 0.4.3",
  "sha2",
@@ -426,7 +426,7 @@ dependencies = [
 [[package]]
 name = "crbk"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/crbk?branch=main#d35cce9df8a976b41fcbd7c3eed546fc429938ad"
+source = "git+https://git.corbet.ch/corbet-foss/crbk?branch=main#e783e8a2766bbd72b70c09cd2fb22983900a1987"
 dependencies = [
  "serde",
  "serde_json",
@@ -436,7 +436,7 @@ dependencies = [
 [[package]]
 name = "crlt"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/crlt?branch=main#6ca3bd1035fcf17c2c88cdae3ed913da49740252"
+source = "git+https://git.corbet.ch/corbet-foss/crlt?branch=main#35477c5bb76596eaa5ababac04b05baaa8d05bb9"
 dependencies = [
  "deadpool",
  "libsql",
@@ -467,7 +467,7 @@ dependencies = [
 [[package]]
 name = "csgn"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/csgn?branch=main#cce187a51f6e74cae82a173cf77b78c52426326c"
+source = "git+https://git.corbet.ch/corbet-foss/csgn?branch=main#9d5a57b655a7a7baa13a1cbab6c4068b186a7efd"
 dependencies = [
  "ciborium-ll",
  "coset",
@@ -480,7 +480,7 @@ dependencies = [
 [[package]]
 name = "cshm"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/cshm?branch=main#4e15101eecc9d4783a646b53c9cc57d7ecf22073"
+source = "git+https://git.corbet.ch/corbet-foss/cshm?branch=main#36e2b847d7bb4bc06a4434ed9ad413c954ed0ab4"
 dependencies = [
  "bigdecimal",
  "jsonschema",
