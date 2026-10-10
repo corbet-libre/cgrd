@@ -183,7 +183,8 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
 same shared admission/matching/Unicode vectors on native and wasm. Tests use
 real csgn signatures, real cpns v2 fingerprints, cshm validation, and local libSQL
 round trips, including isolation and indexed plans. No mocks of our logic.
-Live Turso tests skip unless both environment credentials are nonempty.
+The live Turso probe is ignored by default and requires explicitly authorized
+selection with `--ignored` plus nonempty environment credentials.
 Shared regressions reject a frozen legacy v1 presentation, fingerprints with
 any wrong context component, non-canonical COSE at all three admission
 boundaries and snapshot-cache verification, and messages exceeding the

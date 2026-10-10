@@ -100,8 +100,9 @@ management controls swap/dumps; upstream parsers may make temporary RAM copies.
 
 Real local SQL tests cover host persistence, idempotence, rollback conflicts,
 namespace isolation, migration replay and indexed plans. The opt-in live Turso
-probe requires both `TURSO_URL` and `TURSO_TOKEN`, uses a disposable database and
-is not run as part of this implementation. Supplying credentials is not permission
+probe is ignored by default, requires explicit test selection plus both
+`TURSO_URL` and `TURSO_TOKEN`, uses a disposable database and is not run as part
+of this implementation. Supplying credentials is not permission
 to run a potentially billable probe.
 
 ## Integration limits
