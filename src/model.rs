@@ -27,11 +27,23 @@ pub struct Pin {
     pub fingerprint: [u8; 32],
 }
 
+/// Required owner-versioned community admission assertion.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CredentialPurpose {
+    /// Community admission under the complete configured issuer action.
+    #[serde(rename = "cplc.community-credential.v2")]
+    CommunityCredentialV2,
+}
+
 /// JSON payload inside a csgn `Credential` COSE_Sign1.
 /// Issuer, issued time, expiry and key ID live in csgn's protected envelope.
 #[derive(Clone, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Credential {
+    /// Exact owner format; older unbound credentials are refused.
+    pub purpose: CredentialPurpose,
+    /// Complete issuer action that passed before this credential was signed.
+    pub issuance_action: String,
     /// Issuing community; must also equal the trusted key ring's issuer.
     pub community: String,
     /// Community pseudonym.

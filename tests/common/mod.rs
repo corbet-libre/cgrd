@@ -126,6 +126,8 @@ impl Fixture {
         let device = SigningKey::from_bytes(&[22; 32]);
         let salt = cpns::Salt::from_bytes(vec![33; 16]).unwrap();
         let credential = Credential {
+            purpose: CredentialPurpose::CommunityCredentialV2,
+            issuance_action: "admission".into(),
             community: "garden".into(),
             member: "alice".into(),
             handle: "mountain".into(),
@@ -169,7 +171,11 @@ impl Fixture {
     }
 
     pub fn issue(&mut self) -> Signed {
-        self.body.credential = sign(&mut self.issuer, Kind::Credential, &self.credential);
+        self.issue_payload(&self.credential.clone())
+    }
+
+    pub fn issue_payload(&mut self, credential: &impl serde::Serialize) -> Signed {
+        self.body.credential = sign(&mut self.issuer, Kind::Credential, credential);
         let payload = serde_json::to_vec(&self.body).unwrap();
         let bundle = Bundle {
             signature: self
@@ -208,6 +214,7 @@ impl Signed {
     pub fn policy(&self) -> Policy<'_> {
         Policy {
             community: "garden",
+            expected_issuance_action: "admission",
             keys: &self.keys,
             now: NOW,
             minimum_epoch: 2,

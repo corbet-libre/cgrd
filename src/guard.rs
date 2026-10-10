@@ -10,6 +10,8 @@ use crate::*;
 pub struct Policy<'a> {
     /// Expected community, also the trusted csgn issuer.
     pub community: &'a str,
+    /// Issuer action expected by trusted application configuration, never by the peer.
+    pub expected_issuance_action: &'a str,
     /// Authenticated issuer keys, distributed out of band.
     pub keys: &'a KeyRing,
     /// Current Unix seconds, explicit for deterministic native/wasm execution.
@@ -35,12 +37,10 @@ pub struct PublishedPolicy<'a> {
     pub revocations: &'a [u8],
     /// Lowest authenticated revocation publication revision.
     pub minimum_revocations_revision: u64,
-    /// Rulebook action selected by trusted application configuration.
-    pub action: &'a str,
 }
 
-/// Verify a presentation using the complete flat Rulebook policy and separate
-/// revocations. Missing global proofs or proof times fail closed in Rulebook.
+/// Verify the issuer's exact action verdict under current signed publications.
+/// Global evidence stays issuer-side; this check never reconstructs missing facts.
 pub fn check_published(bundle: &Bundle, policy: &PublishedPolicy<'_>, schema: &[u8]) -> Admission {
     check_published_with_contact(bundle, policy, schema, &|_| cshm::ContactCheck::Unavailable)
 }
@@ -79,14 +79,11 @@ struct VerifiedRules {
 
 enum GatePolicy {
     Legacy(Vec<GateRequirement>),
-    Published {
-        snapshot: crbk::Snapshot,
-        action: String,
-    },
+    IssuerDecision,
 }
 
 impl GatePolicy {
-    fn check(&self, credential: &Credential, now: u64) -> Result<(), Refusal> {
+    fn check(&self, credential: &Credential) -> Result<(), Refusal> {
         let allowed = match self {
             Self::Legacy(required) => required.iter().all(|required| {
                 credential
@@ -94,37 +91,9 @@ impl GatePolicy {
                     .iter()
                     .any(|g| g.gate == required.gate && required.providers.contains(&g.provider))
             }),
-            Self::Published { snapshot, action } => {
-                let gates = credential
-                    .gates
-                    .iter()
-                    .map(|gate| {
-                        Ok(crbk::GateResult {
-                            gate: gate.gate.clone(),
-                            level: crbk::GateLevel::Community,
-                            subject: credential.member.clone(),
-                            community: Some(credential.community.clone()),
-                            provider: gate.provider.clone(),
-                            valid_until: i64::try_from(gate.valid_until)
-                                .map_err(|_| Refusal::Gate)?,
-                            // cplc intentionally does not disclose this metadata.
-                            proven_at: None,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, Refusal>>()?;
-                snapshot
-                    .may(
-                        crbk::Subject {
-                            id: &credential.member,
-                            membership: crbk::MembershipState::Admitted,
-                        },
-                        action,
-                        &gates,
-                        i64::try_from(now).map_err(|_| Refusal::Gate)?,
-                    )
-                    .map_err(|_| Refusal::Gate)?
-                    .allowed
-            }
+            // The common authenticated path requires the exact signed issuer
+            // action and current epoch before this branch. No gate is invented.
+            Self::IssuerDecision => return Ok(()),
         };
         if allowed { Ok(()) } else { Err(Refusal::Gate) }
     }
@@ -190,16 +159,20 @@ fn evaluate_published(
     {
         return Err(Refusal::Metadata);
     }
-    // This is the exact authenticated flat content, with the protected issuance
-    // time restored for the upstream evaluator. No settings are synthesized.
-    let snapshot = crbk::Snapshot {
-        community: settings.community,
-        kind: crbk::SnapshotKind::Settings,
-        revision: settings.revision,
-        policy_epoch: settings.policy_epoch,
-        issued: i64::try_from(settings_issued).map_err(|_| Refusal::Snapshot)?,
-        content: settings.content,
-    };
+    // Preserve the original owner policy's structural checks without attempting
+    // to re-evaluate its unavailable private global evidence at this consumer.
+    i64::try_from(settings_issued).map_err(|_| Refusal::Snapshot)?;
+    i64::try_from(policy.now).map_err(|_| Refusal::Gate)?;
+    if !action_identifier(policy.expected_issuance_action) {
+        return Err(Refusal::Metadata);
+    }
+    let action = settings
+        .content
+        .get(&crbk::action_key(policy.expected_issuance_action))
+        .ok_or(Refusal::Gate)?;
+    let action: crbk::ActionPolicy =
+        serde_json::from_value(action.clone()).map_err(|_| Refusal::Gate)?;
+    action.validate().map_err(|_| Refusal::Gate)?;
     // Reserved handles are membership-owned. No unsigned override is accepted;
     // the credential attests reservation, while Guard checks canonical spelling.
     let rules = VerifiedRules {
@@ -207,10 +180,7 @@ fn evaluate_published(
         schema: schema.content,
         revocations: revocations.content,
         reserved_handles: vec![],
-        gates: GatePolicy::Published {
-            snapshot,
-            action: published.action.into(),
-        },
+        gates: GatePolicy::IssuerDecision,
     };
     evaluate_authenticated(bundle, policy, &rules, contact)
 }
@@ -380,6 +350,14 @@ pub(crate) fn identifier(value: &str) -> bool {
     !value.trim().is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
 }
 
+fn action_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 200
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
+}
+
 fn evaluate(
     bundle: &Bundle,
     policy: &Policy<'_>,
@@ -438,6 +416,9 @@ fn evaluate_authenticated(
     rules: &VerifiedRules,
     contact: &dyn Fn(&str) -> cshm::ContactCheck,
 ) -> Result<Admission, Refusal> {
+    if !action_identifier(policy.expected_issuance_action) {
+        return Err(Refusal::Metadata);
+    }
     let compiled = rules.schema.compile().map_err(|_| Refusal::Snapshot)?;
     let body: BundleContent = parse(&bundle.payload)?;
     // The bounded outer JSON is longer than any decoded credential byte array.
@@ -458,6 +439,12 @@ fn evaluate_authenticated(
     }
     if credential.policy_epoch != rules.epoch || credential.schema_version != rules.schema.version {
         return Err(Refusal::Version);
+    }
+    if !action_identifier(&credential.issuance_action) {
+        return Err(Refusal::Metadata);
+    }
+    if credential.issuance_action != policy.expected_issuance_action {
+        return Err(Refusal::Credential);
     }
     if credential.devices.is_empty()
         || credential.devices.len() > MAX_ITEMS
@@ -488,11 +475,11 @@ fn evaluate_authenticated(
     if credential
         .gates
         .iter()
-        .any(|g| g.valid_until < signed.valid_until())
+        .any(|g| g.valid_until < signed.valid_until() || g.valid_until > i64::MAX as u64)
     {
         return Err(Refusal::Gate);
     }
-    rules.gates.check(&credential, policy.now)?;
+    rules.gates.check(&credential)?;
     let handle =
         check_handle(&credential.handle, &rules.reserved_handles).map_err(|_| Refusal::Handle)?;
     if handle.normalized != credential.handle {

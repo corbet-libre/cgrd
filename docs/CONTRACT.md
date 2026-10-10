@@ -1,4 +1,4 @@
-# cgrd contract, wire version 1 with cpns v2 pins
+# cgrd contract, action-bound credentials with cpns v2 pins
 
 cgrd is the LGPL guard leaf of cvld's community gatekeeping facade. Its
 stateless evaluator also runs on senders, forum services and recipients. It
@@ -14,7 +14,7 @@ Checks stop at the first failing security stage. Profile failures include all
 cshm violations. Reasons never contain answers, salts, signature bytes or raw
 gate evidence. Success means the explicitly reported scope only.
 
-The verifier supplies expected community, an authenticated csgn `KeyRing`,
+The verifier supplies expected community and `expected_issuance_action`, an authenticated csgn `KeyRing`,
 Unix seconds, minimum epoch, minimum settings/schema snapshot revisions,
 maximum snapshot age and signed settings. None comes from the peer. The ring's
 issuer must equal the community. csgn authenticates protected kind, issuer,
@@ -33,12 +33,14 @@ Settings and schema COSE payloads are JSON `Snapshot<T>` objects:
 kinds are `SettingsSnapshot` and `SchemaSnapshot`. Content is `Settings` and
 `cshm::Schema` respectively. Settings contain required gates with explicit
 provider allowlists, current revoked members/device keys, and reserved handles.
-All required gates are conjunctive; resolution of richer community policy
-belongs upstream to crbk. Revocations here are part of the signed settings,
+All required gates are conjunctive additional community-evidence constraints.
+They do not replace the signed issuer action assertion. Resolution of richer
+community policy belongs to the issuer through crbk. Revocations here are part of the signed settings,
 so a separately supplied revocation document cannot be silently ignored.
 
 The `Credential` JSON payload uses csgn kind `Credential`:
-`community`, `member` (community pseudonym), canonical `handle`,
+required `purpose` exactly `cplc.community-credential.v2`, required
+`issuance_action`, `community`, `member` (community pseudonym), canonical `handle`,
 `schema_version`, `policy_epoch`, `gates`, `pins`, and `devices` (Ed25519 public
 keys). Each gate contains only gate/provider/exclusive expiry; its level is
 community and subject is the enclosing member. Each pin has schema field ID
@@ -46,6 +48,14 @@ and a 32-byte cpns **v2** fingerprint. Issued time, expiry and signing key ID li
 once in csgn's authenticated envelope. Every gate expiry must cover the entire
 credential lifetime. Duplicate gates, pin IDs and device keys are refused.
 Credential epoch and schema version must exactly match the snapshots.
+The issuance action must exactly equal the independently configured
+`Policy::expected_issuance_action` in both public adapters. Action identifiers
+are 1–200 ASCII alphanumeric, underscore, dot or hyphen bytes, matching the
+issuer's configured action. Missing, unknown or malformed purpose/action fields
+have no default or legacy fallback. The issuer signs only after its complete
+configured action succeeds; global gate evidence stays issuer-side and still
+bounds the credential's signed lifetime. A matching assertion grants no G2
+accounting currentness and cannot replace the consumer's mandatory record check.
 
 `BundleContent` JSON has `community`, `member`, `device` (32 bytes),
 `credential` (COSE bytes), tagged `profile`, and `openings`. `Bundle` contains
@@ -189,8 +199,11 @@ Shared regressions reject a frozen legacy v1 presentation, fingerprints with
 any wrong context component, non-canonical COSE at all three admission
 boundaries and snapshot-cache verification, and messages exceeding the
 authenticated ring's lifetime limit.
-The accepted frozen fixture contains cpns v2 pins and a csgn v2 key ring;
-native and wasm must verify identical bytes and reproduce them deterministically.
+The historical frozen fixture with cpns v2 pins and a csgn v2 key ring is now
+a genuine negative vector: it lacks the required signed action provenance.
+It remains unchanged. Current v2 signed round trips are source-authored with the
+original deterministic real-signature fixture; native/wasm execution and a new
+CI-generated frozen positive vector still require qualification.
 First-party dependencies follow main. CI resolves one lock snapshot shared by all
 jobs and rejects inconsistent first-party revisions across the graph.
 
@@ -202,17 +215,26 @@ remain in established crates. Never publish this crate to a registry.
 
 ## Complete cplc publication adapter
 
-`check_published` accepts `PublishedPolicy`: trusted authority/time/floors, the
-original settings, schema and separate revocation COSE bytes, and the trusted
-action name. Every document is authenticated independently with csgn; all epochs
+`check_published` accepts `PublishedPolicy`: shared `Policy` authority/time/floors
+and expected issuer action, original settings, schema and separate revocation
+COSE bytes. There is one trusted action expectation, with no second wrapper
+field. Every document is authenticated independently with csgn; all epochs
 must agree. Separate member and device revocations are mandatory and checked
 before device binding. The legacy `Settings` format remains supported only by
 `check`; no translation into that format is performed.
 
-The complete signed flat policy is passed to `crbk::Snapshot::may`, retaining
-all/any/threshold groups, switches, providers, membership and proof-age semantics.
-The original credential authenticates only community gate metadata and admitted
-membership, as attested by cplc issuance. No global proof or proof time is
-inferred. A policy requiring unavailable evidence refuses through Rulebook.
+The original signed flat action must exist and pass crbk's structural validation.
+Its complete all/any/threshold, switch, provider, membership and proof-age
+evaluation belongs to cplc at issuance. The consumer authenticates that exact
+issuer action result under the shared current epoch, rather than re-evaluating
+the full action from incomplete community-only evidence. It never invents a
+global proof, proof time, passed-gate vector or positive global term. The legacy
+`check` path additionally enforces all its original signed community gate
+requirements and the same required issuer action; it is never an unbound route.
 The same credential, device signature, cshm profile and cpns pin checks serve both
 public adapters. Handle reservation remains an issuer/membership responsibility.
+
+The owner format transition requires newly issued action-bound credentials and
+the issuer's effective-epoch migration. Old credential payloads refuse even
+inside genuine current COSE and device signatures. This source stage does not
+establish an executed issuer-to-consumer G1 journey or remove Forum's G2 refusal.

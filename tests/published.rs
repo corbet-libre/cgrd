@@ -1,4 +1,4 @@
-//! Full signed policy and separate revocations execute identically on devices.
+//! Action-bound issuer admission and current publications execute on devices.
 mod common;
 use cgrd::*;
 use common::*;
@@ -34,7 +34,16 @@ fn revocations() -> Value {
     json!({"community":"garden","revision":1,"policy_epoch":2,"content":{"members":[],"devices":[]}})
 }
 fn check_fixture(f: &mut Fixture, settings: &Value, revocations: &Value) -> Admission {
-    let mut signed = f.issue();
+    let signed = f.issue();
+    check_signed_fixture(f, signed, settings, revocations)
+}
+
+fn check_signed_fixture(
+    f: &mut Fixture,
+    mut signed: Signed,
+    settings: &Value,
+    revocations: &Value,
+) -> Admission {
     signed.settings = sign(&mut f.issuer, csgn::Kind::SettingsSnapshot, settings);
     let revoked = sign(
         &mut f.issuer,
@@ -45,10 +54,121 @@ fn check_fixture(f: &mut Fixture, settings: &Value, revocations: &Value) -> Admi
         policy: signed.policy(),
         revocations: &revoked,
         minimum_revocations_revision: 1,
-        action: "admission",
     };
     check_published(&signed.bundle, &policy, &signed.schema)
 }
+
+shared_test!(
+    required_version_and_issuer_action_have_no_legacy_defaults,
+    {
+        for case in 0..10 {
+            let mut f = Fixture::new();
+            let mut credential = serde_json::to_value(&f.credential).unwrap();
+            let expected = match case {
+                0 => {
+                    credential.as_object_mut().unwrap().remove("purpose");
+                    Refusal::Credential
+                }
+                1 => {
+                    credential
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("issuance_action");
+                    Refusal::Credential
+                }
+                2 => {
+                    credential["purpose"] = json!("cplc.community-credential.v1");
+                    Refusal::Credential
+                }
+                3 => {
+                    credential["issuance_action"] = json!("other");
+                    Refusal::Credential
+                }
+                4 => {
+                    credential["issuance_action"] = json!("");
+                    Refusal::Metadata
+                }
+                5 => {
+                    credential["issuance_action"] = json!("admission/other");
+                    Refusal::Metadata
+                }
+                6 => {
+                    credential["issuance_action"] = json!("a".repeat(201));
+                    Refusal::Metadata
+                }
+                7 => {
+                    credential["issuance_action"] = Value::Null;
+                    Refusal::Credential
+                }
+                8 => {
+                    credential["global_gates"] = json!([]);
+                    Refusal::Credential
+                }
+                _ => {
+                    credential["admitted"] = json!(true);
+                    Refusal::Credential
+                }
+            };
+            // Genuine issuer and device signatures cannot rescue absent action
+            // provenance, malformed metadata or an invented admission flag.
+            refused(f.issue_payload(&credential).check(), expected.clone());
+            let signed = f.issue_payload(&credential);
+            refused(
+                check_signed_fixture(&mut f, signed, &settings(action()), &revocations()),
+                expected,
+            );
+        }
+    }
+);
+
+shared_test!(
+    trusted_action_expectation_cannot_come_from_the_presentation,
+    {
+        let mut f = Fixture::new();
+        let mut signed = f.issue();
+        let mut current = settings(action());
+        current["content"]["action/other"] = action();
+        signed.settings = sign(&mut f.issuer, csgn::Kind::SettingsSnapshot, &current);
+        let revoked = sign(
+            &mut f.issuer,
+            csgn::Kind::RevocationListSnapshot,
+            &revocations(),
+        );
+        let mut published = PublishedPolicy {
+            policy: signed.policy(),
+            revocations: &revoked,
+            minimum_revocations_revision: 1,
+        };
+        published.policy.expected_issuance_action = "other";
+        refused(
+            check_published(&signed.bundle, &published, &signed.schema),
+            Refusal::Credential,
+        );
+        // Both action definitions are genuine and current. Only the independently
+        // expected action may authorize the signed credential's actual result.
+        published.policy.expected_issuance_action = "admission";
+        assert!(check_published(&signed.bundle, &published, &signed.schema).is_admitted());
+        for expected in ["", "admission/other", "admission\n", "with space"] {
+            published.policy.expected_issuance_action = expected;
+            refused(
+                check_published(&signed.bundle, &published, &signed.schema),
+                Refusal::Metadata,
+            );
+        }
+        let legacy = f.issue();
+        let mut policy = legacy.policy();
+        policy.expected_issuance_action = "other";
+        refused(
+            check(&legacy.bundle, &policy, &legacy.schema),
+            Refusal::Credential,
+        );
+        policy.expected_issuance_action = "";
+        refused(
+            check(&legacy.bundle, &policy, &legacy.schema),
+            Refusal::Metadata,
+        );
+    }
+);
 
 shared_test!(
     signed_passkey_revocations_preserve_person_and_device_checks,
@@ -92,66 +212,54 @@ shared_test!(
     }
 );
 
-shared_test!(complete_all_any_threshold_policy_preserves_binding, {
+shared_test!(issuer_admission_does_not_export_or_invent_global_facts, {
     for group in ["all_of", "any_of", "k_of_n"] {
         let mut f = Fixture::new();
         let mut policy = action();
+        let global = json!({"gate":"person","level":"global","provider":"global"});
         policy[group] = match group {
-            "all_of" => json!([requirement("voucher")]),
-            "any_of" => json!([requirement("other"), requirement("voucher")]),
-            _ => json!({"k":1,"of":[requirement("other"),requirement("voucher")]}),
+            "all_of" => json!([global, requirement("voucher")]),
+            "any_of" => json!([global, requirement("voucher")]),
+            _ => json!({"k":2,"of":[global,requirement("voucher")]}),
         };
         let signed_settings = settings(policy);
+        // The trusted fixture issuer signs its positive action result. This
+        // leaf test does not claim that it exercised cplc's issuance evaluator.
+        // The consumer checks that assertion; global evidence remains private.
         assert!(check_fixture(&mut f, &signed_settings, &revocations()).is_admitted());
         f.credential.gates.clear();
-        refused(
-            check_fixture(&mut f, &signed_settings, &revocations()),
-            Refusal::Gate,
-        );
+        assert!(check_fixture(&mut f, &signed_settings, &revocations()).is_admitted());
+        // Legacy required community facts remain an additional constraint.
+        refused(f.issue().check(), Refusal::Gate);
     }
-    let mut f = Fixture::new();
-    let mut policy = action();
-    policy["k_of_n"] = json!({"k":2,"of":[requirement("voucher"),requirement("other")]});
-    refused(
-        check_fixture(&mut f, &settings(policy.clone()), &revocations()),
-        Refusal::Gate,
-    );
-    f.credential.gates.push(Gate {
-        gate: "other".into(),
-        provider: "community".into(),
-        valid_until: EXPIRY,
-    });
-    assert!(check_fixture(&mut f, &settings(policy), &revocations()).is_admitted());
 });
 
-shared_test!(rich_policy_never_infers_absent_evidence, {
-    let mut f = Fixture::new();
-    let mut policy = action();
-    policy["all_of"] = json!([requirement("voucher")]);
-    for case in 0..9 {
-        let mut settings = settings(policy.clone());
-        match case {
-            0 => settings["content"]["gate/community/voucher"] = json!(false),
-            1 => settings["content"]["provider/community/voucher/community"] = json!(false),
-            2 => settings["content"]["action/admission"]["maximum_proof_age"] = json!(300),
-            3 => settings["content"]["action/admission"]["all_of"][0]["level"] = json!("global"),
-            4 => settings["content"]["action/admission"]["membership"] = json!(["pending"]),
-            5 => settings["content"]
-                .as_object_mut()
-                .unwrap()
-                .remove("action/admission")
-                .map(|_| ())
-                .unwrap(),
-            6 => settings["content"]["action/admission"]["k_of_n"] = json!({"k":0,"of":[]}),
-            7 => settings["content"]["action/admission"]["unexpected"] = json!(true),
-            _ => settings["content"]["action/admission"]["all_of"][0]["provider"] = json!("wrong"),
+shared_test!(
+    issuer_action_requires_original_well_formed_current_policy,
+    {
+        let mut f = Fixture::new();
+        let mut policy = action();
+        policy["all_of"] = json!([requirement("voucher")]);
+        for case in 0..4 {
+            let mut settings = settings(policy.clone());
+            match case {
+                0 => settings["content"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("action/admission")
+                    .map(|_| ())
+                    .unwrap(),
+                1 => settings["content"]["action/admission"]["k_of_n"] = json!({"k":0,"of":[]}),
+                2 => settings["content"]["action/admission"]["unexpected"] = json!(true),
+                _ => settings["content"]["action/admission"]["all_of"][0]["provider"] = json!(""),
+            }
+            refused(
+                check_fixture(&mut f, &settings, &revocations()),
+                Refusal::Gate,
+            );
         }
-        refused(
-            check_fixture(&mut f, &settings, &revocations()),
-            Refusal::Gate,
-        );
     }
-});
+);
 
 shared_test!(separate_revocations_and_epoch_are_mandatory, {
     let mut f = Fixture::new();
@@ -193,7 +301,6 @@ shared_test!(separate_revocations_and_epoch_are_mandatory, {
         policy: signed.policy(),
         revocations: &[],
         minimum_revocations_revision: 1,
-        action: "admission",
     };
     refused(
         check_published(&signed.bundle, &policy, &signed.schema),
@@ -292,7 +399,6 @@ shared_test!(
                 policy: signed.policy(),
                 revocations: &revoked,
                 minimum_revocations_revision: 1,
-                action: "admission",
             };
             match case {
                 0 => policy.policy.minimum_settings_revision = 2,
