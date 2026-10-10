@@ -19,7 +19,7 @@ limits, and public/private boundaries. Complete signing and validation examples
 are executable in [the shared test vectors](tests/shared.rs). Both platforms
 verify the identical [v2 signed fixture](tests/vectors/admission.json) and
 reject the [legacy signed fixture](tests/vectors/admission-v1.json), generated
-with public deterministic fixture keys on GitHub Actions.
+with public deterministic fixture keys in CI.
 
 ## Scope
 
@@ -31,7 +31,7 @@ caller-supplied, and missing authority or profile evidence fails closed.
 
 ## Dependency survey
 
-Surveyed crates.io metadata and upstream GitHub sources on 2026-09-30:
+Surveyed crates.io metadata and upstream sources on 2026-09-30:
 
 | Candidate | Decision and reason |
 |---|---|
@@ -135,10 +135,9 @@ Copyright 2026 Julian Y. Richard Corbet. Licensed under [LGPL-3.0-only](LICENSES
 
 First-party dependencies follow `main`; Cargo.lock records one exact revision
 per crate. CI checks the entire resolved graph, including optional declarations.
-Dependabot covers Cargo and GitHub Actions (there is no npm manifest here).
-The merge workflow uses GitHub metadata only and requires every substantive CI
-job and all published checks to succeed on the exact Dependabot head. It never
-executes PR code with write permissions or bypasses branch protection.
+Dependency updates must pass every substantive CI job and published check on
+the exact candidate revision before merging. Update automation must never
+execute candidate code with write permissions or bypass branch protection.
 
 [cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov) supplies LLVM line and
 branch measurements; the strict gate and exclusions are in [COVERAGE.md](docs/COVERAGE.md).
