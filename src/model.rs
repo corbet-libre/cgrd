@@ -148,6 +148,11 @@ pub struct BundleContent {
     pub member: String,
     /// Device public key, present in the signed credential's authorization list.
     pub device: [u8; 32],
+    /// Recipient X25519 HPKE public key, signed with this whole bundle. Legacy
+    /// presentations without it can pass person/profile checks but cannot yield
+    /// an opaque HPKE recipient capability. No device-key inference is allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hpke_key: Option<[u8; 32]>,
     /// Complete csgn credential COSE bytes.
     pub credential: Vec<u8>,
     /// Profile in the signed validation scope.

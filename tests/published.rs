@@ -425,3 +425,117 @@ shared_test!(
         }
     }
 );
+
+shared_test!(
+    recipient_capability_requires_complete_gate_and_explicit_signed_key,
+    {
+        for case in 0..6 {
+            let mut f = Fixture::new();
+            f.body.hpke_key = match case {
+                1 => None,
+                2 => Some([0; 32]),
+                _ => Some([9; 32]),
+            };
+            let mut signed = f.issue();
+            signed.settings = sign(
+                &mut f.issuer,
+                csgn::Kind::SettingsSnapshot,
+                &settings(action()),
+            );
+            let mut revoked = revocations();
+            if case == 5 {
+                revoked["content"]["devices"] = json!([f.body.device]);
+            }
+            let revoked = sign(&mut f.issuer, csgn::Kind::RevocationListSnapshot, &revoked);
+            if case == 4 {
+                let mut changed: Value = serde_json::from_slice(&signed.bundle.payload).unwrap();
+                changed["hpke_key"] = json!(vec![8; 32]);
+                signed.bundle.payload = serde_json::to_vec(&changed).unwrap();
+            }
+            let policy = PublishedPolicy {
+                policy: signed.policy(),
+                revocations: &revoked,
+                minimum_revocations_revision: 1,
+            };
+            let result = verify_recipient_with_contact(
+                &signed.bundle,
+                if case == 3 { "mallory" } else { "alice" },
+                &policy,
+                &signed.schema,
+                &|_| cshm::ContactCheck::Unavailable,
+            );
+            if case == 0 {
+                let recipient = result.unwrap();
+                assert_eq!(recipient.community(), "garden");
+                assert_eq!(recipient.member(), "alice");
+                assert_eq!(recipient.device(), &f.body.device);
+                assert_eq!(recipient.hpke_key(), &[9; 32]);
+                assert_eq!(recipient.checked_at(), policy.policy.now);
+                assert!(std::ptr::eq(recipient.bundle(), &signed.bundle));
+            } else {
+                assert!(result.is_err());
+            }
+        }
+    }
+);
+
+shared_test!(
+    recipient_capability_cannot_bypass_action_provenance_or_epoch,
+    {
+        for case in 0..5 {
+            let mut f = Fixture::new();
+            f.body.hpke_key = Some([9; 32]);
+            let mut credential = serde_json::to_value(&f.credential).unwrap();
+            let expected = match case {
+                0 => {
+                    credential.as_object_mut().unwrap().remove("purpose");
+                    Refusal::Credential
+                }
+                1 => {
+                    credential
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("issuance_action");
+                    Refusal::Credential
+                }
+                2 => {
+                    credential["issuance_action"] = json!("other");
+                    Refusal::Credential
+                }
+                3 => {
+                    credential["policy_epoch"] = json!(1);
+                    Refusal::Version
+                }
+                _ => Refusal::Credential,
+            };
+            let mut signed = f.issue_payload(&credential);
+            let mut current = settings(action());
+            current["content"]["action/other"] = action();
+            signed.settings = sign(&mut f.issuer, csgn::Kind::SettingsSnapshot, &current);
+            let revoked = sign(
+                &mut f.issuer,
+                csgn::Kind::RevocationListSnapshot,
+                &revocations(),
+            );
+            let mut policy = PublishedPolicy {
+                policy: signed.policy(),
+                revocations: &revoked,
+                minimum_revocations_revision: 1,
+            };
+            if case == 4 {
+                policy.policy.expected_issuance_action = "other";
+            }
+            assert_eq!(
+                verify_recipient_with_contact(
+                    &signed.bundle,
+                    "alice",
+                    &policy,
+                    &signed.schema,
+                    &|_| cshm::ContactCheck::Unavailable,
+                )
+                .err(),
+                Some(expected),
+            );
+        }
+    }
+);

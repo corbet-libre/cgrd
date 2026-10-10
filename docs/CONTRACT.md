@@ -238,3 +238,25 @@ The owner format transition requires newly issued action-bound credentials and
 the issuer's effective-epoch migration. Old credential payloads refuse even
 inside genuine current COSE and device signatures. This source stage does not
 establish an executed issuer-to-consumer G1 journey or remove Forum's G2 refusal.
+
+## Explicit signed HPKE recipient
+
+`BundleContent.hpke_key` is an optional 32-byte X25519 public key inside the exact
+existing device-signed payload. Original person/profile presentations without it
+remain scoped to that check; they cannot yield a recipient capability. No key is
+inferred from an unsigned directory or converted from a device ID by Guard.
+
+`verify_recipient_with_contact` runs the current action-bound published-policy
+verification, checks the independently expected member, and requires an explicit
+nonzero signed key. Its non-Clone/non-Serde `VerifiedRecipient` has private fields
+and borrows the original bundle. It exposes authenticated community/member/device,
+original public key, exact checked_at, and original signed bundle. The public
+serializable `Admission` diagnostic cannot construct it.
+
+This capability supplies authenticated public material to Envelope's maintained
+RFC9180 Auth-mode operation. It does not decide Exchange consent, current G3,
+profile-publication revision binding, offer replay or Store adoption. Rebuild
+current Charter/Guard at the original clock after authority/network awaits; no
+new TTL is attached to this stateless result. Keys/Profile must insert their
+actual purpose public key before signing; Envelope checks the maintained KEM
+and exact two publications/revisions/offer context before sealing a private key.

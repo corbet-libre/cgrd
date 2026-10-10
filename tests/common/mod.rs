@@ -145,6 +145,7 @@ impl Fixture {
             devices: vec![device.verifying_key().to_bytes()],
         };
         let body = BundleContent {
+            hpke_key: None,
             community: "garden".into(),
             member: "alice".into(),
             device: device.verifying_key().to_bytes(),
