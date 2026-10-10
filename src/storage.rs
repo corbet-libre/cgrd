@@ -12,11 +12,6 @@ use csgn::{KeyRing, Kind};
 
 use crate::{Settings, guard};
 
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-mod libsql;
-#[cfg(all(feature = "storage", not(target_arch = "wasm32")))]
-pub use libsql::{LibsqlStore, SCHEMA};
-
 /// Public snapshot types this cache is allowed to retain.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SnapshotKind {
@@ -64,6 +59,28 @@ pub struct SnapshotRecord {
 }
 
 impl SnapshotRecord {
+    /// Validate monotonic replacement in a caller-owned atomic transaction.
+    /// Exact bytes at the same revision are idempotent; rollback/conflicts refuse.
+    pub fn check_replacement(
+        &self,
+        current: Option<&StoredSnapshot>,
+    ) -> Result<bool, StorageError> {
+        should_write(current, &self.stored)
+    }
+
+    /// Authenticated snapshot namespace for a caller-owned atomic store.
+    pub fn community(&self) -> &str {
+        &self.community
+    }
+    /// Authenticated snapshot kind.
+    pub fn kind(&self) -> SnapshotKind {
+        self.kind
+    }
+    /// Original verified public bytes and monotonic metadata, never a member profile.
+    pub fn stored(&self) -> &StoredSnapshot {
+        &self.stored
+    }
+
     /// Verify a public snapshot and its content before allowing persistence.
     pub fn verify(
         community: &str,

@@ -12,7 +12,7 @@ interface is experimental and is not published to a registry.
 - `check_handle(handle, reserved)` returns PRECIS-normalized text and its
   confusable skeleton, or stable refusal reasons.
 - `storage::Store` offers a community-bound snapshot cache with `MemoryStore`
-  and native `LibsqlStore` through crlt. Evaluation itself never uses storage.
+  and an explicit caller-owned persistence port. Evaluation never uses storage.
 
 See [the implemented contract](docs/CONTRACT.md) for wire formats, trust inputs,
 limits, and public/private boundaries. Complete signing and validation examples
@@ -36,7 +36,7 @@ Surveyed crates.io metadata and upstream GitHub sources on 2026-09-30:
 | Candidate | Decision and reason |
 |---|---|
 | [csgn](https://github.com/corbet-foss/csgn), [cshm](https://github.com/corbet-foss/cshm), [cpns](https://github.com/corbet-foss/cpns) | Use git revisions already on main: COSE Ed25519 verification, schema/profile validation and pin openings respectively. Disable csgn signing and cpns storage in the runtime dependency. No local replacement traits needed. |
-| [crlt](https://github.com/corbet-foss/crlt) | Main already exposes community-scoped SQL, transactions and migrations. Use its git revision for the native adapter; no direct libsql fallback is necessary. It wraps official libsql 0.9.30. |
+| [crlt](https://git.corbet.ch/corbet-foss/crlt) | Development-only host integration example, exercising real SQL transactions. No database implementation or connection is part of this library. |
 | [coset 0.4.2](https://github.com/google/coset) | Rechecked crates.io and upstream source for this alignment. csgn already wraps it with strict canonical framing and verification policy. Keep csgn as the runtime facade; use coset only in tests to prove alternate encodings preserve valid signatures. |
 | [ed25519-dalek 3](https://github.com/dalek-cryptography/curve25519-dalek) | Strict verification of the authorized device's detached Ed25519 signature. csgn's COSE kinds cover issuer documents, not device presentations. No cryptographic primitive is implemented here. |
 | [precis-profiles 0.2.0](https://github.com/sancane/precis) | Required maintained PRECIS UsernameCaseMapped implementation. |
@@ -69,7 +69,7 @@ Consumers must coordinate verdict-affecting updates across native and wasm.
 
 ## Validation and storage
 
-GitHub Actions runs formatting, warning-free Clippy, native tests, the wasm
+CI runs formatting, warning-free Clippy, native tests, the wasm
 build check, and the **same** integration tests under Node's wasm runtime.
 The metadata check requires first-party main declarations and rejects duplicate
 resolved revisions throughout the graph. CI refreshes one coherent lock before
@@ -77,18 +77,32 @@ all substantive jobs; every job downloads and uses that exact snapshot.
 No Cargo commands run on the workstation. CI retains its resolved lockfile;
 no credentials are supplied to public CI.
 
-Enable the default `storage` feature for crlt/libSQL on native targets. Use
-`default-features = false` for just the portable core and memory cache. The
-service appends `storage::SCHEMA` to its ordered crlt migrations and constructs
-`LibsqlStore::new(&db, community)`. Use one database per community; the composite
-community key also protects isolation when testing a shared database. The
-adapter checks all query plans and atomically refuses revision/epoch rollback.
+The library is RAM-only. `MemoryStore` is a process-local reference cache;
+`storage::Store` is the caller-owned atomic persistence port. The retained empty
+`storage` feature is a compatibility flag and opens no database. Database URLs,
+credentials, migrations, connections and durable transaction implementations
+belong to the application. The test-only `tests/support/snapshot_sql.rs` example
+shows a host implementation and retains real local SQL integration checks.
 
-Real local libSQL tests cover persistence, idempotence, rollback conflicts,
-namespace isolation, migration replay and indexed plans. The optional live
-Turso test runs only when **both** `TURSO_URL` and `TURSO_TOKEN` are nonempty.
-Use a disposable test database: it applies this crate's migration and writes
-signed public fixtures. Credentials never belong in source control or CI.
+A host saves only signature-verified settings/schema snapshots. Use the immutable
+`SnapshotRecord::{community,kind,stored}` accessors and run `check_replacement`
+inside the same atomic transaction as the write. Load results remain untrusted
+until signature validation; persisted floors alone never establish authority.
+
+All profile, rule, pin and handle evaluation is local. Callers can preview their
+actual rules using these same pure functions and explicit dummy inputs; that does
+not mint a credential or establish a real person's attributes. There is no billed
+provider dispatch, quote acquisition or fallback, and no provider credentials.
+Host compute, storage and any external verification service have separate costs;
+this library does not label them free. Raw profiles, credentials and openings
+remain transient and are never submitted to the snapshot port. Host memory
+management controls swap/dumps; upstream parsers may make temporary RAM copies.
+
+Real local SQL tests cover host persistence, idempotence, rollback conflicts,
+namespace isolation, migration replay and indexed plans. The opt-in live Turso
+probe requires both `TURSO_URL` and `TURSO_TOKEN`, uses a disposable database and
+is not run as part of this implementation. Supplying credentials is not permission
+to run a potentially billable probe.
 
 ## Integration limits
 
@@ -135,5 +149,5 @@ settings translation. Global and proof-time evidence absent from current cplc
 credentials remains unavailable and fails closed when required.
 
 Storage fault tests use the maintained upstream libsql engine to inject damaged
-on-disk rows and ignored writes in temporary databases. Production storage stays
+on-disk rows and ignored writes in temporary databases. Application storage stays
 behind crlt's table/index-only migration and scoped-query boundary.

@@ -1,6 +1,9 @@
 //! Real libSQL and memory-store contract tests; never build storage on wasm.
-#![cfg(all(feature = "storage", not(target_arch = "wasm32")))]
+#![cfg(not(target_arch = "wasm32"))]
 mod common;
+#[path = "support/snapshot_sql.rs"]
+mod snapshot_sql;
+use snapshot_sql::{LibsqlStore, SCHEMA};
 
 use cgrd::storage::*;
 use common::*;
@@ -24,6 +27,9 @@ fn record(community: &str, revision: u64, epoch: u64) -> SnapshotRecord {
 async fn contract(store: &impl Store, community: &str) {
     assert_eq!(store.load(SnapshotKind::Settings).await.unwrap(), None);
     let initial = record(community, 1, 2);
+    assert_eq!(initial.community(), community);
+    assert_eq!(initial.kind(), SnapshotKind::Settings);
+    assert_eq!(initial.stored().revision, 1);
     store.save(&initial).await.unwrap();
     let saved = store.load(SnapshotKind::Settings).await.unwrap().unwrap();
     assert_eq!((saved.revision, saved.policy_epoch), (1, 2));

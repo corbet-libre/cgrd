@@ -152,21 +152,21 @@ English; no claim of perfect or universal moderation is made.
 
 ## Storage and limits
 
-`Store` has `load(kind)` and atomic `save(verified_record)`; implementations
-are `MemoryStore` and native `LibsqlStore` using the ready crlt git API. Only
-signature-checked settings and schemas can construct a `SnapshotRecord`.
+`Store` has `load(kind)` and atomic `save(verified_record)`. Only `MemoryStore`
+is implemented in the library. Applications own all durable adapters and
+connections; the SQL implementation exists solely as a test host example.
+Only signature-checked settings and schemas construct `SnapshotRecord`.
 Loaded bytes are untrusted until verified again. No bundles, profiles,
-credentials, pin openings or activity history are stored.
+credentials, pin openings or activity history are submitted to this port.
 
-Deploy one DB per community. The table `cgrd_snapshots` contains
-`community_id`, `kind`, `revision`, `policy_epoch`, `cose`; primary key
-`(community_id, kind)` WITHOUT ROWID. crlt injects scope in every SQL statement.
-Save rejects cross-community records, decreasing epochs, decreasing revisions,
-and different bytes at an equal revision. Exact replay is idempotent.
-Persisted revisions and epochs must fit nonnegative signed 64-bit integers.
-SELECT/INSERT/UPDATE plans are verified with EXPLAIN QUERY PLAN. The caller
-owns migrations and database credentials. A remote failure may leave write
-outcome uncertain; reconcile through load, then reverify.
+`SnapshotRecord::{community,kind,stored}` expose immutable selected public
+metadata. An application transaction must enforce community isolation and call
+`record.check_replacement(current)` before writing: decreasing epochs,
+decreasing revisions and conflicting equal revisions are refused; exact replay
+is idempotent. The check and write must be atomic. Selected revisions/epochs fit
+nonnegative signed 64-bit integers. A remote uncertain write requires load and
+reverification; it never permits blindly overwriting the frontier. MemoryStore
+provides process-local behavior only, without restart or cross-process claims.
 
 Bundle/snapshot bytes are capped at 1 MiB. Collections of fields, gates,
 devices, openings, rules, reserved handles and current revocations are capped

@@ -1,4 +1,5 @@
-use super::*;
+//! Caller-side persistence example used only by integration tests, never linked into cgrd.
+use cgrd::storage::*;
 
 /// DDL for the service's ordered crlt migration list. No timestamps, member
 /// profiles or request data. Primary key covers every lookup and mutation.
@@ -29,7 +30,7 @@ pub struct LibsqlStore {
 impl LibsqlStore {
     /// Bind to one community in an already migrated database.
     pub fn new(db: &crlt::Db, community: &str) -> Result<Self, StorageError> {
-        if !guard::identifier(community) {
+        if MemoryStore::new(community).is_err() {
             return Err(StorageError::Invalid);
         }
         let db = db.community(community).map_err(unavailable)?;
@@ -82,7 +83,7 @@ fn decode(rows: &[crlt::Row]) -> Result<Option<StoredSnapshot>, StorageError> {
     let crlt::Value::Blob(bytes) = row.get_value(2).map_err(unavailable)? else {
         return Err(StorageError::Invalid);
     };
-    if revision <= 0 || epoch < 0 || bytes.len() > crate::MAX_DOCUMENT_BYTES {
+    if revision <= 0 || epoch < 0 || bytes.len() > cgrd::MAX_DOCUMENT_BYTES {
         return Err(StorageError::Invalid);
     }
     Ok(Some(StoredSnapshot {
@@ -104,17 +105,17 @@ impl Store for LibsqlStore {
     }
 
     async fn save(&self, record: &SnapshotRecord) -> Result<(), StorageError> {
-        if record.community != self.community {
+        if record.community() != self.community {
             return Err(StorageError::Invalid);
         }
         let mut tx = self.db.tx().await.map_err(unavailable)?;
         let current = decode(
-            &tx.query(SELECT, [record.kind.as_str()])
+            &tx.query(SELECT, [record.kind().as_str()])
                 .await
                 .map_err(unavailable)?,
         )?;
-        let next = &record.stored;
-        match should_write(current.as_ref(), next) {
+        let next = record.stored();
+        match record.check_replacement(current.as_ref()) {
             Ok(false) => {
                 tx.rollback().await.map_err(unavailable)?;
                 return Ok(());
@@ -132,7 +133,7 @@ impl Store for LibsqlStore {
                     next.revision as i64,
                     next.policy_epoch as i64,
                     next.cose.clone(),
-                    record.kind.as_str(),
+                    record.kind().as_str(),
                     current.revision as i64
                 ],
             )
@@ -141,7 +142,7 @@ impl Store for LibsqlStore {
             tx.execute(
                 INSERT,
                 crlt::params![
-                    record.kind.as_str(),
+                    record.kind().as_str(),
                     next.revision as i64,
                     next.policy_epoch as i64,
                     next.cose.clone()
