@@ -50,6 +50,48 @@ fn check_fixture(f: &mut Fixture, settings: &Value, revocations: &Value) -> Admi
     check_published(&signed.bundle, &policy, &signed.schema)
 }
 
+shared_test!(
+    signed_passkey_revocations_preserve_person_and_device_checks,
+    {
+        let mut f = Fixture::new();
+        let mut revoked = revocations();
+        revoked["content"]["passkeys"] = json!([vec![73u8; 32]]);
+        assert!(check_fixture(&mut f, &settings(action()), &revoked).is_admitted());
+        revoked["content"]["members"] = json!(["alice"]);
+        assert!(matches!(
+            check_fixture(&mut f, &settings(action()), &revoked),
+            Admission::Refused { reasons } if reasons == vec![Refusal::Revoked]
+        ));
+        revoked["content"]["members"] = json!([]);
+        revoked["content"]["devices"] = json!([f.body.device]);
+        assert!(matches!(
+            check_fixture(&mut f, &settings(action()), &revoked),
+            Admission::Refused { reasons } if reasons == vec![Refusal::Revoked]
+        ));
+    }
+);
+
+shared_test!(
+    signed_passkey_revocations_refuse_invalid_ids_and_unknown_fields,
+    {
+        let mut f = Fixture::new();
+        for id in [Vec::new(), vec![73u8; 1025]] {
+            let mut revoked = revocations();
+            revoked["content"]["passkeys"] = json!([id]);
+            assert!(matches!(
+                check_fixture(&mut f, &settings(action()), &revoked),
+                Admission::Refused { reasons } if reasons == vec![Refusal::Metadata]
+            ));
+        }
+        let mut revoked = revocations();
+        revoked["content"]["operator_override"] = json!(true);
+        assert!(matches!(
+            check_fixture(&mut f, &settings(action()), &revoked),
+            Admission::Refused { reasons } if reasons == vec![Refusal::Snapshot]
+        ));
+    }
+);
+
 shared_test!(complete_all_any_threshold_policy_preserves_binding, {
     for group in ["all_of", "any_of", "k_of_n"] {
         let mut f = Fixture::new();

@@ -65,6 +65,8 @@ pub fn check_published_with_contact(
 struct Revocations {
     members: BTreeSet<String>,
     devices: BTreeSet<[u8; 32]>,
+    #[serde(default)]
+    passkeys: BTreeSet<Vec<u8>>,
 }
 
 struct VerifiedRules {
@@ -174,6 +176,11 @@ fn evaluate_published(
     }
     if revocations.content.members.len() > MAX_ITEMS
         || revocations.content.devices.len() > MAX_ITEMS
+        || revocations
+            .content
+            .passkeys
+            .iter()
+            .any(|id| id.is_empty() || id.len() > 1024)
         || revocations
             .content
             .members
@@ -417,6 +424,7 @@ fn evaluate(
         revocations: Revocations {
             members: settings.content.revoked_members.into_iter().collect(),
             devices: settings.content.revoked_devices.into_iter().collect(),
+            passkeys: BTreeSet::new(),
         },
         reserved_handles: settings.content.reserved_handles,
         gates: GatePolicy::Legacy(settings.content.required_gates),
