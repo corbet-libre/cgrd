@@ -228,6 +228,7 @@ async fn storage_failures_are_redacted_and_unsigned_payloads_cannot_be_cached() 
 }
 
 #[tokio::test]
+#[ignore = "requires explicit authorized live-service execution"]
 async fn turso_round_trip_when_both_credentials_are_present() {
     let (Ok(url), Ok(token)) = (std::env::var("TURSO_URL"), std::env::var("TURSO_TOKEN")) else {
         eprintln!("skipping live Turso: both environment credentials are required");
