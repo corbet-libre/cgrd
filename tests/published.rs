@@ -539,3 +539,34 @@ shared_test!(
         }
     }
 );
+
+shared_test!(a_verified_sponsor_exposes_only_charter_credential_facts, {
+    let mut f = Fixture::new();
+    let mut signed = f.issue();
+    signed.settings = sign(
+        &mut f.issuer,
+        csgn::Kind::SettingsSnapshot,
+        &settings(action()),
+    );
+    let revoked = sign(
+        &mut f.issuer,
+        csgn::Kind::RevocationListSnapshot,
+        &revocations(),
+    );
+    let published = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &revoked,
+        minimum_revocations_revision: 1,
+    };
+    let none = |_: &str| cshm::ContactCheck::Unavailable;
+    let sponsor =
+        verify_sponsor_with_contact(&signed.bundle, "alice", &published, &signed.schema, &none)
+            .unwrap();
+    assert_eq!(sponsor.member, "alice");
+    assert_eq!(sponsor.devices, f.credential.devices);
+    assert_eq!(sponsor.handle, f.credential.handle);
+    assert!(
+        verify_sponsor_with_contact(&signed.bundle, "bob", &published, &signed.schema, &none)
+            .is_err()
+    );
+});

@@ -159,7 +159,14 @@ pub struct BundleContent {
     pub profile: Profile,
     /// Openings for all presented pinned fields, and no other fields.
     pub openings: Vec<Opening>,
+    /// System field, never an answer of the member: the sponsor's signed
+    /// endorsement wire form ("vouched for by a community handle"). Opaque here;
+    /// the displaying side verifies it. Absent in hidden mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vouched_by: Option<Vec<u8>>,
 }
+/// Largest accepted endorsement wire form: length byte, 255 handle bytes, device key, signature.
+pub const MAX_ENDORSEMENT_BYTES: usize = 1 + 255 + 32 + 64;
 
 /// The exact JSON bytes and detached Ed25519 signature of a presentation.
 /// Sign [`binding_bytes`] of `payload`; do not reserialize received bytes.

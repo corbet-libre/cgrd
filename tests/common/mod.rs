@@ -155,6 +155,7 @@ impl Fixture {
                 field: "age".into(),
                 salt: salt.as_bytes().to_vec(),
             }],
+            vouched_by: None,
         };
         Self {
             issuer: issuer("garden"),
