@@ -156,6 +156,7 @@ impl Fixture {
                 salt: salt.as_bytes().to_vec(),
             }],
             vouched_by: None,
+            vouched_verified: false,
         };
         Self {
             issuer: issuer("garden"),

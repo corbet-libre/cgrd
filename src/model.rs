@@ -164,6 +164,11 @@ pub struct BundleContent {
     /// the displaying side verifies it. Absent in hidden mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vouched_by: Option<Vec<u8>>,
+    /// Set by the publishing door only after it verified `vouched_by` against the
+    /// sponsor's current authorized devices (see [`crate::check_published_with_sponsors`]).
+    /// It is what lets a later reader show a departed sponsor as "a former member".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vouched_verified: bool,
 }
 /// Largest accepted endorsement wire form: length byte, 255 handle bytes, device key, signature.
 pub const MAX_ENDORSEMENT_BYTES: usize = 1 + 255 + 32 + 64;
