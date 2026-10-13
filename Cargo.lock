@@ -406,7 +406,7 @@ dependencies = [
 [[package]]
 name = "cpns"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/cpns?branch=main#eb041a636b4675570af9617d6b59978f50cd82fb"
+source = "git+https://git.corbet.ch/corbet-foss/cpns?branch=main#817205414231a6dd76cf86e63c6bc083b78b844a"
 dependencies = [
  "getrandom 0.4.3",
  "sha2",
@@ -426,8 +426,9 @@ dependencies = [
 [[package]]
 name = "crbk"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/crbk?branch=main#e783e8a2766bbd72b70c09cd2fb22983900a1987"
+source = "git+https://git.corbet.ch/corbet-foss/crbk?branch=main#c3701ed4f9976ef13ea4039f8d298cfd1d294965"
 dependencies = [
+ "semver",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -436,7 +437,7 @@ dependencies = [
 [[package]]
 name = "crlt"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/crlt?branch=main#35477c5bb76596eaa5ababac04b05baaa8d05bb9"
+source = "git+https://git.corbet.ch/corbet-foss/crlt?branch=main#c0e627b928c122545010dde93caf2b79c6caec06"
 dependencies = [
  "deadpool",
  "libsql",
@@ -467,7 +468,7 @@ dependencies = [
 [[package]]
 name = "csgn"
 version = "0.0.0"
-source = "git+https://git.corbet.ch/corbet-foss/csgn?branch=main#9d5a57b655a7a7baa13a1cbab6c4068b186a7efd"
+source = "git+https://git.corbet.ch/corbet-foss/csgn?branch=main#516b1d4102bc89601a8070c821b730e834911014"
 dependencies = [
  "ciborium-ll",
  "coset",
@@ -1123,15 +1124,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,7 +1722,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -2208,7 +2200,7 @@ dependencies = [
  "bitflags 1.3.2",
  "doc-comment",
  "finl_unicode",
- "itertools 0.10.5",
+ "itertools",
  "lazy_static",
  "rustc-hash 1.1.0",
  "unicode-normalization",
