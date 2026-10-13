@@ -558,3 +558,111 @@ shared_test!(
         }
     }
 );
+
+shared_test!(a_verified_sponsor_exposes_only_charter_credential_facts, {
+    let mut f = Fixture::new();
+    let mut signed = f.issue();
+    signed.settings = sign(
+        &mut f.issuer,
+        csgn::Kind::SettingsSnapshot,
+        &settings(action()),
+    );
+    let revoked = sign(
+        &mut f.issuer,
+        csgn::Kind::RevocationListSnapshot,
+        &revocations(),
+    );
+    let published = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &revoked,
+        minimum_revocations_revision: 1,
+    };
+    let none = |_: &str| cshm::ContactCheck::Unavailable;
+    let sponsor =
+        verify_sponsor_with_contact(&signed.bundle, "alice", &published, &signed.schema, &none)
+            .unwrap();
+    assert_eq!(sponsor.member, "alice");
+    assert_eq!(sponsor.devices, f.credential.devices);
+    assert_eq!(sponsor.handle, f.credential.handle);
+    assert!(
+        verify_sponsor_with_contact(&signed.bundle, "bob", &published, &signed.schema, &none)
+            .is_err()
+    );
+});
+
+fn endorsement_wire(key: &ed25519_dalek::SigningKey, member: &str, handle: &str) -> Vec<u8> {
+    use ed25519_dalek::Signer as _;
+    let signature = key.sign(&cvch::link::endorsement_bytes("garden", member, handle));
+    cvch::link::Endorsement::new(handle, key.verifying_key().to_bytes(), signature.to_bytes())
+        .unwrap()
+        .to_bytes()
+        .unwrap()
+}
+
+fn check_sponsored(
+    wire: Option<Vec<u8>>,
+    verified: bool,
+    sponsors: &dyn Fn(&str) -> Option<Vec<[u8; 32]>>,
+) -> Admission {
+    let mut f = Fixture::new();
+    f.body.vouched_by = wire;
+    f.body.vouched_verified = verified;
+    let mut signed = f.issue();
+    signed.settings = sign(
+        &mut f.issuer,
+        csgn::Kind::SettingsSnapshot,
+        &settings(action()),
+    );
+    let revoked = sign(
+        &mut f.issuer,
+        csgn::Kind::RevocationListSnapshot,
+        &revocations(),
+    );
+    let published = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &revoked,
+        minimum_revocations_revision: 1,
+    };
+    let none = |_: &str| cshm::ContactCheck::Unavailable;
+    check_published_with_sponsors(&signed.bundle, &published, &signed.schema, &none, sponsors)
+}
+
+shared_test!(
+    an_endorsement_is_refused_at_publication_unless_the_sponsor_vouches_now,
+    {
+        let sponsor = ed25519_dalek::SigningKey::from_bytes(&[5; 32]);
+        let stranger = ed25519_dalek::SigningKey::from_bytes(&[6; 32]);
+        let device = sponsor.verifying_key().to_bytes();
+        let present = |h: &str| (h == "sponsorname").then(|| vec![device]);
+        let wire = endorsement_wire(&sponsor, "alice", "sponsorname");
+        assert!(check_sponsored(Some(wire.clone()), true, &present).is_admitted());
+        assert!(check_sponsored(None, false, &present).is_admitted());
+        // Forgery: self-signed endorsement naming an absent handle.
+        let forged = endorsement_wire(&stranger, "alice", "gonehandle");
+        refused(
+            check_sponsored(Some(forged), true, &present),
+            Refusal::Endorsement,
+        );
+        // Genuine handle but signed by a device the sponsor does not authorize.
+        let borrowed = endorsement_wire(&stranger, "alice", "sponsorname");
+        refused(
+            check_sponsored(Some(borrowed), true, &present),
+            Refusal::Endorsement,
+        );
+        // Signed for another member, unrecorded verification, or a claim without a field.
+        let other = endorsement_wire(&sponsor, "bob", "sponsorname");
+        refused(
+            check_sponsored(Some(other), true, &present),
+            Refusal::Endorsement,
+        );
+        refused(
+            check_sponsored(Some(wire), false, &present),
+            Refusal::Endorsement,
+        );
+        refused(check_sponsored(None, true, &present), Refusal::Endorsement);
+        refused(
+            check_sponsored(Some(vec![1, 2]), true, &present),
+            Refusal::Endorsement,
+        );
+    }
+);

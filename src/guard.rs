@@ -60,6 +60,105 @@ pub fn check_published_with_contact(
     }
 }
 
+/// Current authorized device keys of the member holding a community handle, or
+/// `None` when no current member holds it. Supplied by the verifier from
+/// credentials it has already verified; nothing comes from the bundle.
+pub type Sponsors<'a> = &'a dyn Fn(&str) -> Option<Vec<[u8; 32]>>;
+
+/// As [`check_published_with_contact`], and additionally refuse a bundle whose
+/// sponsor endorsement cannot be verified now: it must parse, be signed for exactly
+/// this community and member, name a handle whose current member authorizes the
+/// signing device, and the bundle must record that verification
+/// (`vouched_verified`). A bundle without an endorsement must not claim one.
+pub fn check_published_with_sponsors(
+    bundle: &Bundle,
+    policy: &PublishedPolicy<'_>,
+    schema: &[u8],
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
+    sponsors: Sponsors<'_>,
+) -> Admission {
+    let admission = check_published_with_contact(bundle, policy, schema, contact);
+    if !admission.is_admitted() {
+        return admission;
+    }
+    match endorsement_holds(bundle, sponsors) {
+        Ok(()) => admission,
+        Err(reason) => Admission::Refused {
+            reasons: vec![reason],
+        },
+    }
+}
+
+fn endorsement_holds(bundle: &Bundle, sponsors: Sponsors<'_>) -> Result<(), Refusal> {
+    let body: BundleContent = parse(&bundle.payload)?;
+    let Some(wire) = body.vouched_by.as_deref() else {
+        return if body.vouched_verified {
+            Err(Refusal::Endorsement)
+        } else {
+            Ok(())
+        };
+    };
+    let endorsement =
+        cvch::link::Endorsement::from_bytes(wire).map_err(|_| Refusal::Endorsement)?;
+    endorsement
+        .verify(&body.community, &body.member)
+        .map_err(|_| Refusal::Endorsement)?;
+    let devices = sponsors(&endorsement.handle).ok_or(Refusal::Endorsement)?;
+    if !body.vouched_verified || !devices.contains(&endorsement.device) {
+        return Err(Refusal::Endorsement);
+    }
+    Ok(())
+}
+
+/// Whether the publishing door recorded that it verified the endorsement.
+pub fn vouched_verified(bundle: &Bundle) -> bool {
+    parse::<BundleContent>(&bundle.payload).is_ok_and(|body| body.vouched_verified)
+}
+
+/// A member whose bundle passed the complete current gate, with the charter
+/// credential facts a verifier needs to attribute an endorsement to this member.
+pub struct VerifiedSponsor {
+    /// Authenticated member pseudonym.
+    pub member: String,
+    /// The charter-certified community handle.
+    pub handle: String,
+    /// Device keys the credential authorizes.
+    pub devices: Vec<[u8; 32]>,
+}
+
+/// Verify `bundle` as `expected_member` and return its credential facts.
+/// The caller supplies trusted current policy; nothing comes from the bundle itself.
+pub fn verify_sponsor_with_contact(
+    bundle: &Bundle,
+    expected_member: &str,
+    policy: &PublishedPolicy<'_>,
+    schema: &[u8],
+    contact: &dyn Fn(&str) -> cshm::ContactCheck,
+) -> Result<VerifiedSponsor, Refusal> {
+    evaluate_published(bundle, policy, schema, contact)?;
+    let body: BundleContent = parse(&bundle.payload)?;
+    if body.member != expected_member {
+        return Err(Refusal::Subject);
+    }
+    let signed = policy
+        .policy
+        .keys
+        .verify(&body.credential, Kind::Credential, policy.policy.now)
+        .map_err(|_| Refusal::Credential)?;
+    let credential: Credential = parse(signed.payload()).map_err(|_| Refusal::Credential)?;
+    Ok(VerifiedSponsor {
+        member: credential.member,
+        handle: credential.handle,
+        devices: credential.devices,
+    })
+}
+
+/// The endorsement wire form a bundle carries, if any. This is a read of signed
+/// bytes only; it grants nothing until the caller verifies it.
+pub fn vouched_by(bundle: &Bundle) -> Option<Vec<u8>> {
+    parse::<BundleContent>(&bundle.payload).ok()?.vouched_by
+}
+
 /// Original signed bundle that passed the complete current person/profile gate
 /// and contains an explicitly signed HPKE recipient key. No public constructor,
 /// deserializer or accepting conversion from the diagnostic Admission enum exists.
@@ -268,6 +367,9 @@ pub enum Refusal {
     StaleSnapshot,
     /// Invalid credential signature or signed lifetime.
     Credential,
+    /// The sponsor endorsement is malformed, not signed for this community and
+    /// member, not made by a current device of the named sponsor, or unrecorded.
+    Endorsement,
     /// Community or member binding differs.
     Subject,
     /// Credential, policy and schema epochs or versions differ.
@@ -492,6 +594,13 @@ fn evaluate_authenticated(
     }
     let compiled = rules.schema.compile().map_err(|_| Refusal::Snapshot)?;
     let body: BundleContent = parse(&bundle.payload)?;
+    if body
+        .vouched_by
+        .as_ref()
+        .is_some_and(|b| b.len() > MAX_ENDORSEMENT_BYTES)
+    {
+        return Err(Refusal::Malformed);
+    }
     // The bounded outer JSON is longer than any decoded credential byte array.
     if body.openings.len() > MAX_ITEMS {
         return Err(Refusal::Malformed);

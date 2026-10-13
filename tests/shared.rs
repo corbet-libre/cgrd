@@ -1181,3 +1181,23 @@ shared_test!(
         );
     }
 );
+
+shared_test!(a_signed_vouched_by_field_is_bound_and_bounded, {
+    let mut f = Fixture::new();
+    f.body.vouched_by = Some(vec![7; 40]);
+    let s = f.issue();
+    assert!(s.check().is_admitted());
+    assert_eq!(vouched_by(&s.bundle), Some(vec![7; 40]));
+    let mut f = Fixture::new();
+    let s = f.issue();
+    assert_eq!(vouched_by(&s.bundle), None);
+    let mut f = Fixture::new();
+    f.body.vouched_by = Some(vec![7; MAX_ENDORSEMENT_BYTES + 1]);
+    refused(f.issue().check(), Refusal::Malformed);
+    // Changing the field after signing breaks the device binding.
+    let mut s = Fixture::new().issue();
+    let mut body: BundleContent = serde_json::from_slice(&s.bundle.payload).unwrap();
+    body.vouched_by = Some(vec![1; 8]);
+    s.bundle.payload = serde_json::to_vec(&body).unwrap();
+    assert!(!s.check().is_admitted());
+});

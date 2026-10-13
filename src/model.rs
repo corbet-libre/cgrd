@@ -159,7 +159,19 @@ pub struct BundleContent {
     pub profile: Profile,
     /// Openings for all presented pinned fields, and no other fields.
     pub openings: Vec<Opening>,
+    /// System field, never an answer of the member: the sponsor's signed
+    /// endorsement wire form ("vouched for by a community handle"). Opaque here;
+    /// the displaying side verifies it. Absent in hidden mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vouched_by: Option<Vec<u8>>,
+    /// Set by the publishing door only after it verified `vouched_by` against the
+    /// sponsor's current authorized devices (see [`crate::check_published_with_sponsors`]).
+    /// It is what lets a later reader show a departed sponsor as "a former member".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vouched_verified: bool,
 }
+/// Largest accepted endorsement wire form: length byte, 255 handle bytes, device key, signature.
+pub const MAX_ENDORSEMENT_BYTES: usize = 1 + 255 + 32 + 64;
 
 /// The exact JSON bytes and detached Ed25519 signature of a presentation.
 /// Sign [`binding_bytes`] of `payload`; do not reserialize received bytes.
