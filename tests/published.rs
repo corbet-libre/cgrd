@@ -427,6 +427,25 @@ shared_test!(
 );
 
 shared_test!(
+    passkey_revocation_projection_preserves_person_profile_checks,
+    {
+        let mut f = Fixture::new();
+        let mut revoked = revocations();
+        revoked["content"]["passkeys"] = json!([vec![9; 64]]);
+        // Guard still checks the person/profile. Passkey possession and lineage are
+        // separate G3 obligations; this signed projection is not a shortcut for them.
+        assert!(check_fixture(&mut f, &settings(action()), &revoked).is_admitted());
+        for invalid in [Vec::new(), vec![9; 1025]] {
+            revoked["content"]["passkeys"] = json!([invalid]);
+            assert!(
+                matches!(check_fixture(&mut f, &settings(action()), &revoked),
+            Admission::Refused { reasons } if reasons == vec![Refusal::Metadata])
+            );
+        }
+    }
+);
+
+shared_test!(
     recipient_capability_requires_complete_gate_and_explicit_signed_key,
     {
         for case in 0..6 {
