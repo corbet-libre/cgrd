@@ -169,9 +169,16 @@ pub struct BundleContent {
     /// It is what lets a later reader show a departed sponsor as "a former member".
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vouched_verified: bool,
+    /// System field: the sponsor's community credential as the newcomer's device received
+    /// it (`cvch::link::Snapshot` wire form), signed by the member's device. Evidence for a
+    /// reader to show a departed sponsor as "a former member"; opaque and unverified here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vouched_snapshot: Option<Vec<u8>>,
 }
 /// Largest accepted endorsement wire form: length byte, 255 handle bytes, device key, signature.
 pub const MAX_ENDORSEMENT_BYTES: usize = 1 + 255 + 32 + 64;
+/// Bound of the carried lineage snapshot (`cvch::link::Snapshot` wire form).
+pub const MAX_SNAPSHOT_BYTES: usize = 10 + cvch::link::MAXIMUM_SNAPSHOT_CREDENTIAL;
 
 /// The exact JSON bytes and detached Ed25519 signature of a presentation.
 /// Sign [`binding_bytes`] of `payload`; do not reserialize received bytes.

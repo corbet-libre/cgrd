@@ -157,6 +157,7 @@ impl Fixture {
             }],
             vouched_by: None,
             vouched_verified: false,
+            vouched_snapshot: None,
         };
         Self {
             issuer: issuer("garden"),

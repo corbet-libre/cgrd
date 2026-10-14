@@ -153,6 +153,63 @@ pub fn verify_sponsor_with_contact(
     })
 }
 
+/// The sponsor lineage snapshot a bundle carries (`cvch::link::Snapshot` wire form), if any.
+/// A read of signed bytes only; it grants nothing until [`verify_lineage_snapshot`].
+pub fn vouched_snapshot(bundle: &Bundle) -> Option<Vec<u8>> {
+    parse::<BundleContent>(&bundle.payload).ok()?.vouched_snapshot
+}
+
+/// Verify a lineage snapshot against the community's key ring AS OF the time the newcomer
+/// received it, and return the sponsor's credential facts then (handle, member, devices).
+/// The sponsor may have left since: this proves who the sponsor was, not that they still are.
+/// `departed` is true only on positive evidence: the sponsor's member pseudonym is on the
+/// community's CURRENT signed revocation list. A sponsor who is neither revoked nor otherwise
+/// known to be current is `departed == false` and must not be called "a former member".
+pub fn verify_lineage_snapshot(
+    wire: &[u8],
+    community: &str,
+    policy: &PublishedPolicy<'_>,
+) -> Result<LineageSnapshot, Refusal> {
+    let received =
+        cvch::link::Snapshot::from_bytes(wire).map_err(|_| Refusal::Credential)?;
+    let signed = policy
+        .policy
+        .keys
+        .verify(&received.credential, Kind::Credential, received.received_at)
+        .map_err(|_| Refusal::Credential)?;
+    let credential: Credential = parse(signed.payload()).map_err(|_| Refusal::Credential)?;
+    if credential.community != community {
+        return Err(Refusal::Credential);
+    }
+    let (revocations, _) = snapshot::<Revocations>(
+        policy.revocations,
+        policy.policy.community,
+        policy.policy.keys,
+        Kind::RevocationListSnapshot,
+        policy.policy.now,
+    )?;
+    if revocations.revision < policy.minimum_revocations_revision {
+        return Err(Refusal::Snapshot);
+    }
+    let departed = revocations.content.members.contains(&credential.member);
+    Ok(LineageSnapshot {
+        sponsor: VerifiedSponsor {
+            member: credential.member,
+            handle: credential.handle,
+            devices: credential.devices,
+        },
+        departed,
+    })
+}
+
+/// A sponsor credential verified as of its receipt, with the departure evidence.
+pub struct LineageSnapshot {
+    /// The credential facts at receipt (handle, member, devices).
+    pub sponsor: VerifiedSponsor,
+    /// The sponsor's member is on the current signed revocation list.
+    pub departed: bool,
+}
+
 /// The endorsement wire form a bundle carries, if any. This is a read of signed
 /// bytes only; it grants nothing until the caller verifies it.
 pub fn vouched_by(bundle: &Bundle) -> Option<Vec<u8>> {
@@ -598,6 +655,13 @@ fn evaluate_authenticated(
         .vouched_by
         .as_ref()
         .is_some_and(|b| b.len() > MAX_ENDORSEMENT_BYTES)
+    {
+        return Err(Refusal::Malformed);
+    }
+    if body
+        .vouched_snapshot
+        .as_ref()
+        .is_some_and(|b| b.len() > MAX_SNAPSHOT_BYTES)
     {
         return Err(Refusal::Malformed);
     }

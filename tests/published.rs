@@ -666,3 +666,43 @@ shared_test!(
         );
     }
 );
+
+shared_test!(a_lineage_snapshot_verifies_as_of_receipt_and_only_for_this_community, {
+    let mut f = Fixture::new();
+    let signed = f.issue();
+    let revoked = sign(&mut f.issuer, csgn::Kind::RevocationListSnapshot, &revocations());
+    let published = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &revoked,
+        minimum_revocations_revision: 1,
+    };
+    let snapshot = |credential: Vec<u8>, at: u64| {
+        cvch::link::Snapshot { credential, received_at: at }.to_bytes().unwrap()
+    };
+    let credential = f.body.credential.clone();
+    let now = published.policy.now;
+    let facts = verify_lineage_snapshot(&snapshot(credential.clone(), now), "garden", &published).unwrap();
+    assert_eq!(facts.sponsor.member, f.body.member);
+    assert!(!facts.sponsor.devices.is_empty());
+    assert!(!facts.departed, "a member who is not revoked is not marked departed");
+    // On the signed revocation list the same snapshot reads as a departed sponsor.
+    let gone = sign(
+        &mut f.issuer,
+        csgn::Kind::RevocationListSnapshot,
+        &json!({"community":"garden","revision":1,"policy_epoch":2,"content":{"members":[f.body.member.clone()],"devices":[]}}),
+    );
+    let after = PublishedPolicy {
+        policy: signed.policy(),
+        revocations: &gone,
+        minimum_revocations_revision: 1,
+    };
+    let departed = verify_lineage_snapshot(&snapshot(credential.clone(), now), "garden", &after).unwrap();
+    assert!(departed.departed);
+    // Another community, tampered bytes and garbage are refused.
+    assert!(verify_lineage_snapshot(&snapshot(credential.clone(), now), "other", &published).is_err());
+    let mut tampered = credential.clone();
+    let last = tampered.len() - 1;
+    tampered[last] ^= 1;
+    assert!(verify_lineage_snapshot(&snapshot(tampered, now), "garden", &published).is_err());
+    assert!(verify_lineage_snapshot(&[1, 2, 3], "garden", &published).is_err());
+});
