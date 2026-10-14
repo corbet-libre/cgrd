@@ -754,7 +754,7 @@ dependencies = [
 [[package]]
 name = "cvch"
 version = "0.2.1"
-source = "git+https://git.corbet.ch/corbet-foss/cvch?branch=main#41b6d57cf1c48b1bea8c5c6b721aaad4b54c1992"
+source = "git+https://git.corbet.ch/corbet-foss/cvch?branch=main#781cfff36a78af9539c835041f8f9d42b5ed9492"
 dependencies = [
  "cfbk",
  "csgn",
