@@ -74,7 +74,7 @@ build check, and the **same** integration tests under Node's wasm runtime.
 The metadata check requires first-party main declarations and rejects duplicate
 resolved revisions throughout the graph. CI refreshes one coherent lock before
 all substantive jobs; every job downloads and uses that exact snapshot.
-No Cargo commands run on the workstation. CI retains its resolved lockfile;
+CI retains its resolved lockfile;
 no credentials are supplied to public CI.
 
 The library is RAM-only. `MemoryStore` is a process-local reference cache;
