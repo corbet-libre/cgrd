@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "Guard: stateless person-and-profile checks, rule engine and handle checks that run everywhere"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
-repository = "https://git.corbet.ch/corbet-foss/cgrd"
+repository = "https://git.corbet.ch/corbet-libre/cgrd.git"
 readme = "README.md"
 publish = false
 include = ["Cargo.toml", "src/**", "docs/**", "README.md", "LICENSE", "LICENSE.md", "LICENSES/LGPL-3.0-only.txt", "LICENSES/LGPL-3.0-linking-exception.txt", "LICENSES/GPL-3.0-only.txt"]
@@ -16,11 +16,11 @@ default = []
 storage = []
 
 [dependencies]
-crbk = { git = "https://git.corbet.ch/corbet-foss/crbk", branch = "main", default-features = false }
-csgn = { git = "https://git.corbet.ch/corbet-foss/csgn", branch = "main", default-features = false }
-cshm = { git = "https://git.corbet.ch/corbet-foss/cshm", branch = "main" }
-cvch = { git = "https://git.corbet.ch/corbet-foss/cvch", branch = "main" }
-cpns = { git = "https://git.corbet.ch/corbet-foss/cpns", branch = "main", default-features = false }
+crbk = { git = "https://git.corbet.ch/corbet-libre/crbk.git", branch = "main", default-features = false }
+csgn = { git = "https://git.corbet.ch/corbet-libre/csgn.git", branch = "main", default-features = false }
+cshm = { git = "https://git.corbet.ch/corbet-libre/cshm.git", branch = "main" }
+cvch = { git = "https://git.corbet.ch/corbet-foss/cvch.git", branch = "main" }
+cpns = { git = "https://git.corbet.ch/corbet-libre/cpns.git", branch = "main", default-features = false }
 ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
 precis-profiles = "0.2.0"
 unicode-security = "0.1.2"
@@ -32,11 +32,11 @@ bigdecimal = "0.4.11"
 geographiclib-rs = { version = "0.2", default-features = false }
 
 [dev-dependencies]
-csgn = { git = "https://git.corbet.ch/corbet-foss/csgn", branch = "main", features = ["volatile-signer"] }
+csgn = { git = "https://git.corbet.ch/corbet-libre/csgn.git", branch = "main", features = ["volatile-signer"] }
 coset = "0.4.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-crlt = { git = "https://git.corbet.ch/corbet-foss/crlt", branch = "main" }
+crlt = { git = "https://git.corbet.ch/corbet-libre/crlt.git", branch = "main" }
 libsql = { version = "0.9", default-features = false, features = ["core"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
