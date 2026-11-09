@@ -1,12 +1,11 @@
 //! Real libSQL and memory-store contract tests; never build storage on wasm.
 #![cfg(not(target_arch = "wasm32"))]
-mod common;
 #[path = "support/snapshot_sql.rs"]
 mod snapshot_sql;
 use snapshot_sql::{LibsqlStore, SCHEMA};
 
+use crate::common::*;
 use cgrd::storage::*;
-use common::*;
 use crlt::{Config, Db, Migration};
 
 fn record(community: &str, revision: u64, epoch: u64) -> SnapshotRecord {

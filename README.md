@@ -16,7 +16,7 @@ interface is experimental and is not published to a registry.
 
 See [the implemented contract](docs/CONTRACT.md) for wire formats, trust inputs,
 limits, and public/private boundaries. Complete signing and validation examples
-are executable in [the shared test vectors](tests/shared.rs). Both platforms
+are executable in [the shared test vectors](tests/it/shared.rs). Both platforms
 verify the identical [v2 signed fixture](tests/vectors/admission.json) and
 reject the [legacy signed fixture](tests/vectors/admission-v1.json), generated
 with public deterministic fixture keys in CI.

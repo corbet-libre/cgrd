@@ -1,8 +1,7 @@
 //! The identical fixed inputs and expected decisions execute natively and in wasm.
-mod common;
 
+use crate::common::*;
 use cgrd::*;
-use common::*;
 use coset::{CoseSign1, TaggedCborSerializable};
 use ed25519_dalek::{Signer as _, SigningKey};
 use serde_json::json;
@@ -25,7 +24,7 @@ struct Vector {
 }
 
 shared_test!(frozen_pre_action_credential_wire_vector_is_refused, {
-    let vector: Vector = serde_json::from_str(include_str!("vectors/admission.json")).unwrap();
+    let vector: Vector = serde_json::from_str(include_str!("../vectors/admission.json")).unwrap();
     let signed = Signed {
         bundle: vector.bundle,
         settings: vector.settings,
@@ -39,7 +38,8 @@ shared_test!(frozen_pre_action_credential_wire_vector_is_refused, {
 });
 
 shared_test!(frozen_legacy_wire_vector_is_refused, {
-    let vector: Vector = serde_json::from_str(include_str!("vectors/admission-v1.json")).unwrap();
+    let vector: Vector =
+        serde_json::from_str(include_str!("../vectors/admission-v1.json")).unwrap();
     assert!(vector.expected.is_admitted());
     // The old ring has no maximum-lifetime policy and must be replaced.
     assert_eq!(
@@ -562,7 +562,7 @@ shared_test!(rotation_keeps_old_credentials_verifiable, {
 
 shared_test!(shared_unicode_vectors, {
     let vectors: Vec<serde_json::Value> =
-        serde_json::from_str(include_str!("vectors/handles.json")).unwrap();
+        serde_json::from_str(include_str!("../vectors/handles.json")).unwrap();
     for v in vectors {
         let input = v["input"].as_str().unwrap();
         let result = check_handle(input, &[]);

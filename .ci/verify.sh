@@ -18,7 +18,7 @@ cargo check --locked --target wasm32-unknown-unknown
 bash scripts/wasm-runner.sh
 export PATH="$(tail -n 1 "$GITHUB_PATH"):$PATH"
 export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner
-cargo test --locked --target wasm32-unknown-unknown --no-default-features --lib --test shared --test published
+cargo test --locked --target wasm32-unknown-unknown --no-default-features --lib --test it
 
 rustup run nightly rustc --version
 NIGHTLY_RUSTC="$(rustup which --toolchain nightly rustc)"
