@@ -6,7 +6,6 @@ export RUNNER_TEMP="${RUNNER_TEMP:-$(mktemp -d)}"
 export GITHUB_PATH="${GITHUB_PATH:-$RUNNER_TEMP/github_path}"
 touch "$GITHUB_PATH"
 
-bash .ci/update-our-crates.sh
 cargo metadata --locked --format-version 1 > dependency-metadata.json
 python3 .github/check-first-party.py
 python3 .github/test-check-coverage.py
