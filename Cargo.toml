@@ -19,7 +19,7 @@ storage = []
 crbk = { git = "https://git.corbet.ch/corbet-libre/crbk.git", branch = "main", default-features = false }
 csgn = { git = "https://git.corbet.ch/corbet-libre/csgn.git", branch = "main", default-features = false }
 cshm = { git = "https://git.corbet.ch/corbet-libre/cshm.git", branch = "main" }
-cvch = { git = "https://git.corbet.ch/corbet-foss/cvch.git", branch = "main" }
+cvch = { git = "https://git.corbet.ch/corbet-libre/cvch.git", branch = "main" }
 cpns = { git = "https://git.corbet.ch/corbet-libre/cpns.git", branch = "main", default-features = false }
 ed25519-dalek = { version = "3", default-features = false, features = ["fast"] }
 precis-profiles = "0.2.0"
