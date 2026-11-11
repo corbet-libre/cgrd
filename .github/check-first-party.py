@@ -45,10 +45,10 @@ def check_manifest(value):
 
 
 def self_test():
-    source = 'git+https://git.corbet.ch/corbet-foss/example?branch=main#' + 'a' * 40
+    source = 'git+https://git.corbet.ch/corbet-libre/example?branch=main#' + 'a' * 40
     package = {'name': 'example', 'source': source}
     check_packages([package])
-    check_manifest({'git': 'https://git.corbet.ch/corbet-foss/example', 'branch': 'main'})
+    check_manifest({'git': 'https://git.corbet.ch/corbet-libre/example', 'branch': 'main'})
     for packages in [[package, package], [package, {'name': 'example'}],
                      [{'name': 'example', 'source': source.replace('main', 'next')}],
                      [{'name': 'example', 'source': source.replace('branch=main', 'rev=abc')}],
@@ -59,8 +59,8 @@ def self_test():
         except ValueError:
             continue
         raise AssertionError('Invalid dependency graph accepted')
-    for value in [{'git': 'https://git.corbet.ch/corbet-foss/example', 'rev': 'a' * 40},
-                  {'git': 'https://git.corbet.ch/corbet-foss/example', 'branch': 'main', 'tag': 'v1'}]:
+    for value in [{'git': 'https://git.corbet.ch/corbet-libre/example', 'rev': 'a' * 40},
+                  {'git': 'https://git.corbet.ch/corbet-libre/example', 'branch': 'main', 'tag': 'v1'}]:
         try:
             check_manifest(value)
         except ValueError:
