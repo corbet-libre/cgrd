@@ -156,7 +156,9 @@ pub fn verify_sponsor_with_contact(
 /// The sponsor lineage snapshot a bundle carries (`cvch::link::Snapshot` wire form), if any.
 /// A read of signed bytes only; it grants nothing until [`verify_lineage_snapshot`].
 pub fn vouched_snapshot(bundle: &Bundle) -> Option<Vec<u8>> {
-    parse::<BundleContent>(&bundle.payload).ok()?.vouched_snapshot
+    parse::<BundleContent>(&bundle.payload)
+        .ok()?
+        .vouched_snapshot
 }
 
 /// Verify a lineage snapshot against the community's key ring AS OF the time the newcomer
@@ -170,8 +172,7 @@ pub fn verify_lineage_snapshot(
     community: &str,
     policy: &PublishedPolicy<'_>,
 ) -> Result<LineageSnapshot, Refusal> {
-    let received =
-        cvch::link::Snapshot::from_bytes(wire).map_err(|_| Refusal::Credential)?;
+    let received = cvch::link::Snapshot::from_bytes(wire).map_err(|_| Refusal::Credential)?;
     let signed = policy
         .policy
         .keys
