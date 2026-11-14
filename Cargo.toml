@@ -41,6 +41,12 @@ libsql = { version = "0.9", default-features = false, features = ["core"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tempfile = "3"
 
+# getrandom 0.4 needs its `wasm_js` backend on wasm32-unknown-unknown (the browser's
+# crypto.getRandomValues through wasm-bindgen); the graph pulls getrandom through cvch.
+# Target-scoped so native builds keep the operating system's CSPRNG and nothing changes there.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"] }
+
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
 
