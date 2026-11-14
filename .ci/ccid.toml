@@ -3,8 +3,20 @@ project = "cgrd"
 
 [checks.verify]
 kind = "commands"
-commands = [["bash", ".ci/verify.sh"]]
-cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["jq", "--version"], ["curl", "--version"], ["node", "--version"], ["python3", "--version"], ["git", "--version"], ["rustup", "run", "nightly", "rustc", "-vV"], ["rustup", "run", "nightly", "cargo", "llvm-cov", "--version"], ["clang", "--version"], ["pkg-config", "--version"]]
+fleet = true
+commands = [
+  ["ccid", "first-party"],
+  ["python3", ".github/test-check-coverage.py"],
+  ["cargo", "fmt", "--all", "--check"],
+  ["cargo", "clippy", "--locked", "--all-targets", "--", "-D", "warnings"],
+  ["cargo", "test", "--locked"],
+  ["cargo", "check", "--locked", "--target", "wasm32-unknown-unknown"],
+  ["bash", "-c", "set -euo pipefail\nPATH=\"$(ccid toolchain wasm-bindgen):$PATH\" CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER=wasm-bindgen-test-runner cargo test --locked --target wasm32-unknown-unknown --no-default-features --lib --test it"],
+  ["ccid", "coverage", "run"],
+  ["python3", ".github/test-check-coverage.py"],
+  ["python3", ".github/check-coverage.py", "coverage.lcov", "coverage.json", "coverage.txt"],
+]
+cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["jq", "--version"], ["node", "--version"], ["python3", "--version"], ["git", "--version"], ["rustup", "run", "nightly", "rustc", "-vV"], ["rustup", "run", "nightly", "cargo", "llvm-cov", "--version"], ["clang", "--version"], ["pkg-config", "--version"]]
 cache_env = ["LIBCLANG_PATH", "PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH"]
 cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json"]
 
@@ -19,10 +31,22 @@ scheduler = "forgejo"
 runs_on = "linux"
 checks = ["verify", "advisories"]
 workflow = "ci"
-command = ["bash", ".ci/run-cached.sh"]
+command = ["ccid:run-declared-checks"]
 events = ["manual"]
 
 [check_shell]
 
 [security]
 dependencies = "cargo-deny"
+
+[coverage]
+llvm_cov = ["--branch", "--ignore-filename-regex", "(^|/)(tests|scripts)/"]
+text = ["--show-instantiations"]
+report = ["--branch", "--ignore-filename-regex", "(^|/)(tests|scripts)/"]
+
+[runtime]
+tools = ["jq", "nodejs_22", "python3", "cargo-deny", "cargo-llvm-cov"]
+
+[toolchain]
+nightly = true
+targets = ["stable:wasm32-unknown-unknown"]
