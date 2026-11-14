@@ -18,7 +18,7 @@ commands = [
 ]
 cache_tools = [["rustc", "-vV"], ["cargo", "--version"], ["jq", "--version"], ["node", "--version"], ["python3", "--version"], ["git", "--version"], ["rustup", "run", "nightly", "rustc", "-vV"], ["rustup", "run", "nightly", "cargo", "llvm-cov", "--version"], ["clang", "--version"], ["pkg-config", "--version"]]
 cache_env = ["LIBCLANG_PATH", "PKG_CONFIG_PATH", "NIX_CFLAGS_COMPILE", "NIX_LDFLAGS", "LD_LIBRARY_PATH"]
-cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt", "dependency-metadata.json"]
+cache_outputs = ["coverage.json", "coverage.lcov", "coverage.txt"]
 
 [checks.advisories]
 kind = "commands"
